@@ -1,0 +1,51 @@
+{
+  "engine" : {
+    "heartbeatInterval" : 5000,
+    "etcdHeartbeatInterval" : 250,
+    "cpuCore" : 0
+  },
+  "cmdIf" : {
+    "cpuCore" : 1,
+    "transport" : "udp",
+    "socketParams" : {
+      "listenPort" : 24601,
+      "multicastIf" : "10.20.1.101",
+      "listenGroups" : [
+        "227.1.1.200",
+        "227.1.1.201"
+      ]
+    }
+  },
+  "execIf" : {
+    "cpuCore" : 1,
+    "transport" : "udp",
+    "socketParams" : {
+      "listenPort" : 24602,
+      "multicastIf" : "10.20.1.101",
+      "sendGroup" : "227.1.1.200"
+    }
+  },
+  "threadPool" : {
+    "threadCores" : [0, 1]
+  },
+  "control" : {
+    "listenIf" : "0.0.0.0",
+    "listenPort" : 24601,
+    "queueDepth" : 1024,
+    "poolThreadId" : 1
+  },
+  "productId" : "RANDOMPRODID",
+  "instrumentId" : 999,
+  "startingNegotiationId" : 555,
+
+  "heartbeatMonitor" : {
+    "coreId" : [0, 1],
+    "maxTimestampAge" : 100,
+    "targetPath" : "/heartbeat/test_machine/ME0",
+    "etcdCluster" : [
+      "10.1.1.105:4001",
+      "10.1.1.106:4001",
+      "10.1.1.107:4001"
+    ]
+  }
+}

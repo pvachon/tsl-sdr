@@ -1,0 +1,198 @@
+{
+  "captureDevices": [
+    {
+      "captureCores": [
+        12
+      ],
+      "dev": "p1p1",
+      "driver": "sfc",
+      "ifId": 0
+    },
+    {
+      "captureCores": [
+        13
+      ],
+      "dev": "p1p2",
+      "driver": "sfc",
+      "ifId": 1
+    },
+    {
+      "captureCores": [
+        14
+      ],
+      "dev": "p2p1",
+      "driver": "sfc",
+      "ifId": 2
+    },
+    {
+      "captureCores": [
+        15
+      ],
+      "dev": "p2p2",
+      "driver": "sfc",
+      "ifId": 3
+    }
+  ],
+  "cpuTopology": {
+    "controlCores": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "dataCores": [
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+    ],
+    "housekeepingCores": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  "driveConfig": [
+    {
+      "device": "/dev/sda",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sdb",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sdc",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sde",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sdf",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sdg",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sdh",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sdi",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sdj",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sdk",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sdl",
+      "nrPartitions": 1
+    },
+    {
+      "device": "/dev/sdm",
+      "nrPartitions": 1
+    }
+  ],
+  "indexTarget": {
+    "drive": "/dev/md1",
+    "fs": "ext4",
+    "mountPoint": "/storage/indexer"
+  },
+  "isDevBox": true,
+  "model": "12Sided Capture Appliance 12-disk",
+  "ptpInterface": "p1p1",
+  "storageArray": [
+    {
+      "drive": "/dev/sda1",
+      "fs": "xfs",
+      "id": 0,
+      "mountPoint": "/storage/drive0"
+    },
+    {
+      "drive": "/dev/sdb1",
+      "fs": "xfs",
+      "id": 1,
+      "mountPoint": "/storage/drive1"
+    },
+    {
+      "drive": "/dev/sdc1",
+      "fs": "xfs",
+      "id": 2,
+      "mountPoint": "/storage/drive2"
+    },
+    {
+      "drive": "/dev/sde1",
+      "fs": "xfs",
+      "id": 3,
+      "mountPoint": "/storage/drive3"
+    },
+    {
+      "drive": "/dev/sdf1",
+      "fs": "xfs",
+      "id": 4,
+      "mountPoint": "/storage/drive4"
+    },
+    {
+      "drive": "/dev/sdg1",
+      "fs": "xfs",
+      "id": 5,
+      "mountPoint": "/storage/drive5"
+    },
+    {
+      "drive": "/dev/sdh1",
+      "fs": "xfs",
+      "id": 6,
+      "mountPoint": "/storage/drive6"
+    },
+    {
+      "drive": "/dev/sdi1",
+      "fs": "xfs",
+      "id": 7,
+      "mountPoint": "/storage/drive7"
+    },
+    {
+      "drive": "/dev/sdj1",
+      "fs": "xfs",
+      "id": 8,
+      "mountPoint": "/storage/drive8"
+    },
+    {
+      "drive": "/dev/sdk1",
+      "fs": "xfs",
+      "id": 9,
+      "mountPoint": "/storage/drive9"
+    },
+    {
+      "drive": "/dev/sdl1",
+      "fs": "xfs",
+      "id": 10,
+      "mountPoint": "/storage/drive10"
+    },
+    {
+      "drive": "/dev/sdm1",
+      "fs": "xfs",
+      "id": 11,
+      "mountPoint": "/storage/drive11"
+    }
+  ],
+  "storageDir": "/storage",
+  "version": 1
+}

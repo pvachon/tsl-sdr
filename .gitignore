@@ -1,0 +1,6 @@
+*.sw*
+*.o
+build
+tags
+.waf*
+.lock*
