@@ -56,7 +56,7 @@ aresult_t cpu_mask_new(struct cpu_mask **mask)
     TSL_ASSERT_ARG(mask != NULL);
     *mask = NULL;
 
-    if (AFAILED(ret = TZALLOC(msk))) {
+    if (FAILED(ret = TZALLOC(msk))) {
         goto done;
     }
 
@@ -77,7 +77,7 @@ aresult_t cpu_mask_new(struct cpu_mask **mask)
     *mask = msk;
 
 done_fail:
-    if (AFAILED(ret)) {
+    if (FAILED(ret)) {
         if (NULL != msk) {
             TSL_BUG_IF_FAILED(cpu_mask_delete(&msk));
         }

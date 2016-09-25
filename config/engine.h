@@ -112,7 +112,7 @@ aresult_t config_array_at_sockaddr(struct config *array, struct sockaddr *saddr,
     for ((__ctr) = 0, (__ret) = A_E_INVAL;                                          \
             (__arr)->atom_type == CONFIG_ATOM_ARRAY &&                              \
             (__ctr) < (__arr)->atom_array.length &&                                 \
-            !AFAILED((__ret) = CONFIG_ARRAY_GET_AS((__arr), (__val), (__ctr)));     \
+            !FAILED((__ret) = CONFIG_ARRAY_GET_AS((__arr), (__val), (__ctr)));     \
             (__ctr)++)
 
 /**

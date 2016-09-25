@@ -44,6 +44,8 @@ def options(opt):
 def configure(conf):
 	_loadTools(conf)
 
+	conf.check(lib='rtlsdr', uselib='RTLSDR', define_name='HAVE_RTLSDR')
+
 	#Setup build flags
 	conf.env.CFLAGS += [
 		'-g3',
@@ -90,7 +92,8 @@ def configure(conf):
 	]
 
 	conf.env.LIBPATH += [
-		"/usr/lib/x86_64-linux-gnu",
+		'/usr/lib/x86_64-linux-gnu',
+		'/usr/local/lib',
 	]
 
 	conf.env.LIB += [
@@ -188,11 +191,21 @@ def build(bld):
 	bld.add_pre_fun(_preBuild)
 	bld.add_post_fun(_postBuild)
 
+	bld.read_shlib('rtlsdr', paths=bld.env.LIBPATH)
+
 	#Construct paths for the targets
 	basePath = bld.env.ENVIRONMENT
 	binPath = os.path.join(basePath, 'bin')
 	libPath = os.path.join(basePath, 'lib')
 	testPath = os.path.join(basePath, 'test')
+
+	#MultiFM
+	bld.program(
+		source	= bld.path.ant_glob('multifm/*.c'),
+		use		= ['app', 'config', 'tsl', 'rtlsdr'],
+		target	= os.path.join(binPath, 'multifm'),
+		name	= 'multifm',
+	)
 
 	#app
 	bld.stlib(

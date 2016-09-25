@@ -109,7 +109,7 @@ aresult_t _ht_get_bucket(struct hash_table *table, void *key, size_t key_size, s
 
     *bkt = NULL;
 
-    if (AFAILED(ret = table->hfunc(key, key_size, &hash_val))) {
+    if (FAILED(ret = table->hfunc(key, key_size, &hash_val))) {
         DIAG("Failure while generating key hash");
         goto done;
     }
@@ -138,7 +138,7 @@ aresult_t ht_insert(struct hash_table *table, void *key, size_t key_size, struct
     TSL_ASSERT_ARG(0 != key_size);
     TSL_ASSERT_ARG(NULL != entry);
 
-    if (AFAILED_UNLIKELY(ret = _ht_get_bucket(table, key, key_size, &bkt, &hash_val))) {
+    if (FAILED_UNLIKELY(ret = _ht_get_bucket(table, key, key_size, &bkt, &hash_val))) {
         goto done;
     }
 
@@ -163,14 +163,14 @@ aresult_t ht_find(struct hash_table *table, void *key, size_t key_size, struct h
 
     *pfound = NULL;
 
-    if (AFAILED_UNLIKELY(ret = _ht_get_bucket(table, key, key_size, &bkt, &hash_val))) {
+    if (FAILED_UNLIKELY(ret = _ht_get_bucket(table, key, key_size, &bkt, &hash_val))) {
         goto done;
     }
 
     list_for_each_type(hnode, &bkt->entries, h_node) {
         if (hash_val == hnode->hash) {
             bool res = false;
-            if (AFAILED_UNLIKELY(ret = table->compare(hnode, key, key_size, &res))) {
+            if (FAILED_UNLIKELY(ret = table->compare(hnode, key, key_size, &res))) {
                 break;
             }
 

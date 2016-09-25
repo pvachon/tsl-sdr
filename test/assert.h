@@ -114,7 +114,7 @@ void test_print_boolean(bool val);
 #define TEST_ASSERT_OK(invoc) \
     do { \
         aresult_t __ret = (invoc); \
-        if (AFAILED(__ret)) { \
+        if (FAILED(__ret)) { \
             printf("TEST: Assertion Failed - invocation " #invoc " returned an error: "); \
             test_print_aresult(__ret); \
             printf(" (%s: %d)\n", __FILE__, __LINE__); \
@@ -125,7 +125,7 @@ void test_print_boolean(bool val);
 #define TEST_ASSERT_FAILED(invoc) \
     do { \
         aresult_t __ret = (invoc); \
-        if (!AFAILED(__ret)) { \
+        if (!FAILED(__ret)) { \
             printf("TEST: Assertion Failed - invocation " #invoc " did not return a failure"); \
             printf(" (%s: %d)\n", __FILE__, __LINE__); \
             return A_E_INVAL; \
@@ -136,7 +136,7 @@ void test_print_boolean(bool val);
     do {                                                                                            \
         bool is_dir = false,                                                                        \
              exists = false;                                                                        \
-        if (AFAILED(test_filesystem_check_exists((dir), &exists, NULL, &is_dir))) {                 \
+        if (FAILED(test_filesystem_check_exists((dir), &exists, NULL, &is_dir))) {                 \
             printf("TEST: Assertion Failed - error checking directory stat.", (dir));               \
             printf(" (%s: %d)\n", __FILE__, __LINE__);                                              \
             return A_E_INVAL;                                                                       \
@@ -157,7 +157,7 @@ void test_print_boolean(bool val);
     do {                                                                                            \
         bool is_dir = false,                                                                        \
              exists = false;                                                                        \
-        if (AFAILED(test_filesystem_check_exists((dir), &exists, NULL, &is_dir))) {                 \
+        if (FAILED(test_filesystem_check_exists((dir), &exists, NULL, &is_dir))) {                 \
             printf("TEST: Assertion Failed - error checking directory stat for %s.", (dir));        \
             printf(" (%s: %d)\n", __FILE__, __LINE__);                                              \
             return A_E_INVAL;                                                                       \

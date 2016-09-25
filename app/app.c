@@ -276,19 +276,19 @@ aresult_t app_bind_cpu_core(int core_id)
 
     TSL_ASSERT_ARG(core_id >= 0); /* XXX: should we just use an unsigned type? */
 
-    if (AFAILED(ret = cpu_mask_new(&msk))) {
+    if (FAILED(ret = cpu_mask_new(&msk))) {
         goto done;
     }
 
-    if (AFAILED(ret = cpu_mask_set(msk, core_id))) {
+    if (FAILED(ret = cpu_mask_set(msk, core_id))) {
         goto done;
     }
 
-    if (AFAILED(ret = cpu_mask_apply(msk))) {
+    if (FAILED(ret = cpu_mask_apply(msk))) {
         goto done;
     }
 
-    if (AFAILED(ret = cpu_mask_delete(&msk))) {
+    if (FAILED(ret = cpu_mask_delete(&msk))) {
         goto done;
     }
 
@@ -340,7 +340,7 @@ aresult_t app_init(const char *app_name, struct config *cfg)
         }
 
         DIAG("Initializing '%s' subsystem...", subsys->name);
-        if (AFAILED(subsys->init(cfg))) {
+        if (FAILED(subsys->init(cfg))) {
             PANIC("Failed to initialize subsystem '%s'", subsys->name);
         }
     }
@@ -381,15 +381,15 @@ aresult_t app_allocator_init(struct config *cfg)
             nr_huge_pages = atoi(a_nr_huge_pages);
         }
     } else {
-        if (AFAILED(config_get_integer(cfg, &nr_pages, CONFIG_ALLOC_NR_SLABS))) {
+        if (FAILED(config_get_integer(cfg, &nr_pages, CONFIG_ALLOC_NR_SLABS))) {
             nr_pages = 0;
         }
 
-        if (AFAILED(config_get_integer(cfg, &nr_huge_pages, CONFIG_ALLOC_NR_HUGE_SLABS))) {
+        if (FAILED(config_get_integer(cfg, &nr_huge_pages, CONFIG_ALLOC_NR_HUGE_SLABS))) {
             nr_huge_pages = 0;
         }
 
-        if (AFAILED(config_get_byte_size(cfg, &huge_page_size, CONFIG_ALLOC_HUGE_PAGE_SIZE))) {
+        if (FAILED(config_get_byte_size(cfg, &huge_page_size, CONFIG_ALLOC_HUGE_PAGE_SIZE))) {
             APP_MSG(SEV_WARNING, "NO-HUGE-PAGE-SIZE-SPECIFIED", "Defaulting huge slab size to 2MB.");
         }
     }
@@ -404,7 +404,7 @@ aresult_t app_allocator_init(struct config *cfg)
         DIAG("Warning: memory allocation subsystem is disabled.");
     }
 
-    if (AFAILED(ret = allocator_system_init(nr_pages, page_size, nr_huge_pages, huge_page_size))) {
+    if (FAILED(ret = allocator_system_init(nr_pages, page_size, nr_huge_pages, huge_page_size))) {
         PANIC("Unable to initialize the allocator subsystem.");
     }
 

@@ -53,7 +53,7 @@ aresult_t timer_manager_init(struct timer_manager *mgr)
 
     TSL_ASSERT_ARG(NULL != mgr);
 
-    if (AFAILED(rb_tree_new(&mgr->timer_pq, __timer_manager_sort_timers))) {
+    if (FAILED(rb_tree_new(&mgr->timer_pq, __timer_manager_sort_timers))) {
         DIAG("Failed to allocate a heap for the live timers.");
         ret = A_E_NOMEM;
         goto done;
@@ -92,7 +92,7 @@ aresult_t __timer_manager_add_timer(struct timer *tmr, struct timer_manager *mgr
      * we're just treating the rb-tree as a min-heap).
      */
     for (int i = 0; i < 1000; i++) {
-        if (AFAILED_UNLIKELY(rb_tree_insert(&mgr->timer_pq, (void *)(tmr->next_firing + i), &tmr->tpq_node))) {
+        if (FAILED_UNLIKELY(rb_tree_insert(&mgr->timer_pq, (void *)(tmr->next_firing + i), &tmr->tpq_node))) {
             /* There was a conflict, so repeat the insertion attempt with a slightly tweaked timestamp */
             continue;
         }

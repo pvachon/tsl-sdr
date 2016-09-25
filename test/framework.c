@@ -61,7 +61,7 @@ void tf_print_log(int level, char *file, int line, char *fmt, ...)
 
     level_str = (level < 0 || level > TEST_LOG_LEVEL_ERROR) ? "(UNKNOWN)" : _tf_debug_lev[level];
 
-    if (AFAILED(tasprintf(&fmtr, "TEST:%s[%d]: %s (%s:%d)\n", level_str, _tf_gettid(), fmt, file, line))) {
+    if (FAILED(tasprintf(&fmtr, "TEST:%s[%d]: %s (%s:%d)\n", level_str, _tf_gettid(), fmt, file, line))) {
         DIAG("ERROR: unable to generate print formatting string...");
         goto done;
     }
@@ -93,7 +93,7 @@ aresult_t _tf_execute_test_case(struct test_suite *suite, struct test_suite_unit
         goto done;
     }
 
-    if (NULL != suite->before && AFAILED(ret = suite->before())) {
+    if (NULL != suite->before && FAILED(ret = suite->before())) {
         printf("failed to do pre-unit setup\n");
         ret = A_E_INVAL;
         goto done;
@@ -103,7 +103,7 @@ aresult_t _tf_execute_test_case(struct test_suite *suite, struct test_suite_unit
         TSL_BUG_IF_FAILED(test_malloc_set_sporadic_failure());
     }
 
-    if (AFAILED(unit_ret = unit->test())) {
+    if (FAILED(unit_ret = unit->test())) {
         printf("FAILED.\n");
     } else {
         printf("OK.\n");
@@ -111,14 +111,14 @@ aresult_t _tf_execute_test_case(struct test_suite *suite, struct test_suite_unit
 
     TSL_BUG_IF_FAILED(test_malloc_disable_failures());
 
-    if (NULL != suite->after && AFAILED(ret = suite->after())) {
+    if (NULL != suite->after && FAILED(ret = suite->after())) {
         printf("failed to do post-unit cleanup\n");
         ret = A_E_INVAL;
         goto done;
     }
 
     /* Even if we succeeded at cleanup, if the unit failed, mark it as having failed. */
-    if (AFAILED(unit_ret)) {
+    if (FAILED(unit_ret)) {
         ret = unit_ret;
     }
 
@@ -147,7 +147,7 @@ aresult_t _tf_execute_test_suite(struct test_suite *suite)
     suite_stop = suite->end_units;
 
     if (NULL != suite->setup) {
-        if (AFAILED(ret = suite->setup())) {
+        if (FAILED(ret = suite->setup())) {
             printf("failed to prepare for test suite.\n");
             goto done;
         }
@@ -157,13 +157,13 @@ aresult_t _tf_execute_test_suite(struct test_suite *suite)
         unit = *cursor;
         run++;
 
-        if (AFAILED(_tf_execute_test_case(suite, unit))) {
+        if (FAILED(_tf_execute_test_case(suite, unit))) {
             failed++;
         }
     }
 
     if (NULL != suite->cleanup) {
-        if (AFAILED(ret = suite->cleanup())) {
+        if (FAILED(ret = suite->cleanup())) {
             printf("failed to clean up after the test suite.\n");
             goto done;
         }
@@ -219,7 +219,7 @@ aresult_t tf_execute_all_test_suites(const char **unit_list)
             }
         }
 
-        if (AFAILED(_tf_execute_test_suite(suite))) {
+        if (FAILED(_tf_execute_test_suite(suite))) {
             ret = A_E_INVAL;
         }
     }

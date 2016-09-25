@@ -36,6 +36,7 @@ extern "C" {
 #include <tsl/result.h>
 
 /* Forward declarations */
+struct worker_thread;
 struct thread;
 struct cpu_mask;
 
@@ -101,7 +102,7 @@ enum worker_thread_state {
 /**
  * A thread work function -- a function that is called when a thread is to be started.
  */
-typedef aresult_t (*worker_thread_work_func_t)(void *params);
+typedef aresult_t (*worker_thread_work_func_t)(struct worker_thread *wthr);
 
 /**
  * Structure representing worker thread state. Should be stored cache aligned in host

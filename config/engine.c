@@ -94,7 +94,7 @@ aresult_t config_new(struct config **pcfg)
 
     *pcfg = NULL;
 
-    if (AFAILED(ret = TZALLOC(cfg))) {
+    if (FAILED(ret = TZALLOC(cfg))) {
         goto done;
     }
 
@@ -110,7 +110,7 @@ aresult_t config_new(struct config **pcfg)
     *pcfg = cfg;
 
 done:
-    if (AFAILED(ret)) {
+    if (FAILED(ret)) {
         if (NULL != cfg) {
             if (NULL != cfg->atom_nested) {
                 json_decref((json_t *)cfg->atom_nested);
@@ -194,12 +194,12 @@ aresult_t config_add_system_config(struct config *cfg, const char *name)
     }
 
     /* Load the appropriate file */
-    if (AFAILED(ret = tasprintf(&filename, "%s/%s.json", config_directory, name))) {
+    if (FAILED(ret = tasprintf(&filename, "%s/%s.json", config_directory, name))) {
         CONFIG_MSG(SEV_ERROR, "SYSTEM-CONFIG-FAILED", "Failed to load system config %s (no memory)", name);
         goto done;
     }
 
-    if (AFAILED(ret = config_add(cfg, filename))) {
+    if (FAILED(ret = config_add(cfg, filename))) {
         CONFIG_MSG(SEV_ERROR, "SYSTEM-CONFIG-FAILED", "Failed to load system config %s (from %s)", name, filename);
         goto done;
     }
@@ -219,7 +219,7 @@ aresult_t config_add_array(struct config *cfg, const char **filenames, size_t nr
     /* Zero filenames is OK -- that will happen e.g. if no arguments are passed to a program */
 
     for (size_t i = 0; i < nr_filenames; ++i) {
-        if (AFAILED(ret = config_add(cfg, filenames[i]))) {
+        if (FAILED(ret = config_add(cfg, filenames[i]))) {
             goto done;
         }
     }
@@ -280,7 +280,7 @@ aresult_t config_get(struct config *cfg, struct config *atm, const char *item_id
     TSL_ASSERT_ARG(NULL != atm);
     TSL_ASSERT_STRING(item_id);
 
-    if (AFAILED(ret = tstrdup(&path, item_id))) {
+    if (FAILED(ret = tstrdup(&path, item_id))) {
         goto done;
     }
 
@@ -427,7 +427,7 @@ aresult_t config_array_at_integer(struct config *array, int *item, size_t index)
 
     *item = 0;
 
-    if (AFAILED(ret = config_array_at(array, &atm, index))) {
+    if (FAILED(ret = config_array_at(array, &atm, index))) {
         goto done;
     }
 
@@ -452,7 +452,7 @@ aresult_t config_array_at_size(struct config *array, size_t *item, size_t index)
 
     *item = 0;
 
-    if (AFAILED(ret = config_array_at(array, &atm, index))) {
+    if (FAILED(ret = config_array_at(array, &atm, index))) {
         goto done;
     }
 
@@ -482,7 +482,7 @@ aresult_t config_array_at_string(struct config *array, const char **item, size_t
 
     *item = NULL;
 
-    if (AFAILED(ret = config_array_at(array, &atm, index))) {
+    if (FAILED(ret = config_array_at(array, &atm, index))) {
         goto done;
     }
 
@@ -510,20 +510,20 @@ aresult_t config_get_integer_array(struct config *cfg, int **pvals, size_t *leng
 
     *pvals = NULL;
 
-    if (AFAILED(ret = config_get(cfg, &atm, item_id))) {
+    if (FAILED(ret = config_get(cfg, &atm, item_id))) {
         goto done;
     }
 
-    if (AFAILED(ret = config_array_length(&atm, length))) {
+    if (FAILED(ret = config_array_length(&atm, length))) {
         goto done;
     }
 
-    if (AFAILED(ret = TCALLOC((void **) &vals, *length, sizeof(int)))) {
+    if (FAILED(ret = TCALLOC((void **) &vals, *length, sizeof(int)))) {
         goto done;
     }
 
     for (size_t i = 0; i < *length; ++i) {
-        if (AFAILED(ret = config_array_at_integer(&atm, vals + i, i))) {
+        if (FAILED(ret = config_array_at_integer(&atm, vals + i, i))) {
             goto done;
         }
     }
@@ -547,20 +547,20 @@ aresult_t config_get_size_array(struct config *cfg, size_t **pvals, size_t *leng
 
     *pvals = NULL;
 
-    if (AFAILED(ret = config_get(cfg, &atm, item_id))) {
+    if (FAILED(ret = config_get(cfg, &atm, item_id))) {
         goto done;
     }
 
-    if (AFAILED(ret = config_array_length(&atm, length))) {
+    if (FAILED(ret = config_array_length(&atm, length))) {
         goto done;
     }
 
-    if (AFAILED(ret = TCALLOC((void **) &vals, *length, sizeof(size_t)))) {
+    if (FAILED(ret = TCALLOC((void **) &vals, *length, sizeof(size_t)))) {
         goto done;
     }
 
     for (size_t i = 0; i < *length; ++i) {
-        if (AFAILED(ret = config_array_at_size(&atm, vals + i, i))) {
+        if (FAILED(ret = config_array_at_size(&atm, vals + i, i))) {
             goto done;
         }
     }
@@ -581,7 +581,7 @@ aresult_t config_get_integer(struct config *cfg, int *val, const char *item_id)
     TSL_ASSERT_ARG(NULL != item_id);
     TSL_ASSERT_ARG('\0' != *item_id);
 
-    if (AFAILED(ret = config_get(cfg, &atm, item_id))) {
+    if (FAILED(ret = config_get(cfg, &atm, item_id))) {
         goto done;
     }
 
@@ -606,7 +606,7 @@ aresult_t config_get_size(struct config *cfg, size_t *val, const char *item_id)
     TSL_ASSERT_ARG(NULL != item_id);
     TSL_ASSERT_ARG('\0' != *item_id);
 
-    if (AFAILED(ret = config_get(cfg, &atm, item_id))) {
+    if (FAILED(ret = config_get(cfg, &atm, item_id))) {
         goto done;
     }
 
@@ -636,7 +636,7 @@ aresult_t config_get_boolean(struct config *cfg, bool *val, const char *item_id)
     TSL_ASSERT_ARG(NULL != item_id);
     TSL_ASSERT_ARG('\0' != *item_id);
 
-    if (AFAILED(ret = config_get(cfg, &atm, item_id))) {
+    if (FAILED(ret = config_get(cfg, &atm, item_id))) {
         goto done;
     }
 
@@ -661,7 +661,7 @@ aresult_t config_get_string(struct config *cfg, const char **val, const char *it
     TSL_ASSERT_ARG(NULL != item_id);
     TSL_ASSERT_ARG('\0' != *item_id);
 
-    if (AFAILED(ret = config_get(cfg, &atm, item_id))) {
+    if (FAILED(ret = config_get(cfg, &atm, item_id))) {
         goto done;
     }
 
@@ -731,14 +731,14 @@ aresult_t config_get_byte_size(struct config *cfg, uint64_t *val, const char *it
     TSL_ASSERT_ARG(NULL != item_id);
     TSL_ASSERT_ARG('\0' != *item_id);
 
-    if (AFAILED(ret = config_get(cfg, &atm, item_id))) {
+    if (FAILED(ret = config_get(cfg, &atm, item_id))) {
         goto done;
     }
 
     switch (atm.atom_type) {
     case CONFIG_ATOM_STRING: {
             char *endptr = NULL;
-            if (AFAILED(ret = _config_parse_memory_size(atm.atom_string, &endptr, val))) {
+            if (FAILED(ret = _config_parse_memory_size(atm.atom_string, &endptr, val))) {
                 DIAG("Failed to parse memory size from key '%s'", item_id);
                 goto done;
             }
@@ -809,14 +809,14 @@ aresult_t config_get_time_interval(struct config *cfg, uint64_t *val_ns, const c
     TSL_ASSERT_ARG(NULL != item_id);
     TSL_ASSERT_ARG('\0' != *item_id);
 
-    if (AFAILED(ret = config_get(cfg, &atm, item_id))) {
+    if (FAILED(ret = config_get(cfg, &atm, item_id))) {
         goto done;
     }
 
     switch (atm.atom_type) {
     case CONFIG_ATOM_STRING: {
             char *endptr = NULL;
-            if (AFAILED(ret = _config_parse_time_string(atm.atom_string, &endptr, val_ns))) {
+            if (FAILED(ret = _config_parse_time_string(atm.atom_string, &endptr, val_ns))) {
                 DIAG("Failed to parse time interval from key '%s'", item_id);
                 goto done;
             }
@@ -928,7 +928,7 @@ aresult_t config_get_sockaddr(struct config *cfg, struct sockaddr *saddr, size_t
     TSL_ASSERT_ARG(NULL != item_id);
     TSL_ASSERT_ARG('\0' != *item_id);
 
-    if (AFAILED(ret = config_get_string(cfg, &ip_string, item_id))) {
+    if (FAILED(ret = config_get_string(cfg, &ip_string, item_id))) {
         goto done;
     }
 
@@ -949,7 +949,7 @@ aresult_t config_array_at_sockaddr(struct config *cfg, struct sockaddr *saddr, s
     TSL_ASSERT_ARG(NULL != plen);
     TSL_ASSERT_ARG(0 != *plen);
 
-    if (AFAILED(ret = config_array_at_string(cfg, &ip_string, index))) {
+    if (FAILED(ret = config_array_at_string(cfg, &ip_string, index))) {
         goto done;
     }
 

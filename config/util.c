@@ -22,27 +22,27 @@ aresult_t cpu_mask_from_config(struct cpu_mask **pmask, struct config *cfg, cons
 
     *pmask = NULL;
 
-    if (AFAILED(ret = cpu_mask_new(&mask))) {
+    if (FAILED(ret = cpu_mask_new(&mask))) {
         goto done;
     }
 
-    if (!AFAILED(ret = config_get_integer(cfg, &core_id, field_name))) {
+    if (!FAILED(ret = config_get_integer(cfg, &core_id, field_name))) {
         if (0 > core_id) {
             DIAG("Negative core ID specified, aborting.");
             ret = A_E_INVAL;
             goto done;
         }
 
-        if (AFAILED(ret = cpu_mask_set(mask, core_id))) {
+        if (FAILED(ret = cpu_mask_set(mask, core_id))) {
             DIAG("Failed to set CPU Core mask: %d", core_id);
             goto done;
         }
-    } else if (!AFAILED(ret = config_get(cfg, &core_arr, field_name))) {
+    } else if (!FAILED(ret = config_get(cfg, &core_arr, field_name))) {
         size_t nr_entries = 0;
         bool failed = false;
         size_t num_set = 0;
 
-        if (AFAILED(ret = config_array_length(&core_arr, &nr_entries))) {
+        if (FAILED(ret = config_array_length(&core_arr, &nr_entries))) {
             DIAG("Array is malformed.");
             goto done;
         }
@@ -56,7 +56,7 @@ aresult_t cpu_mask_from_config(struct cpu_mask **pmask, struct config *cfg, cons
         /* TODO: walk this with the new array helpers */
         for (size_t i = 0; i < nr_entries; i++) {
             int arr_core_id = -1;
-            if (AFAILED(ret = config_array_at_integer(&core_arr, &arr_core_id, i))) {
+            if (FAILED(ret = config_array_at_integer(&core_arr, &arr_core_id, i))) {
                 DIAG("Array entry %zu is not an integer, skipping.", i);
                 failed = true;
                 continue;
@@ -68,7 +68,7 @@ aresult_t cpu_mask_from_config(struct cpu_mask **pmask, struct config *cfg, cons
                 continue;
             }
 
-            if (AFAILED(ret = cpu_mask_set(mask, arr_core_id))) {
+            if (FAILED(ret = cpu_mask_set(mask, arr_core_id))) {
                 DIAG("Invalid core ID specified: %d at offset %zu", arr_core_id, i);
                 failed = true;
                 continue;
@@ -91,7 +91,7 @@ aresult_t cpu_mask_from_config(struct cpu_mask **pmask, struct config *cfg, cons
     *pmask = mask;
 
 done:
-    if (AFAILED(ret)) {
+    if (FAILED(ret)) {
         if (NULL != mask) {
             TSL_BUG_IF_FAILED(cpu_mask_delete(&mask));
         }

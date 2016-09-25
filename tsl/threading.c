@@ -61,7 +61,7 @@ static
 struct thread *__helper_thread_alloc(void)
 {
     struct thread *thr = NULL;
-    if (AFAILED(TZALLOC(thr))) {
+    if (FAILED(TZALLOC(thr))) {
       goto done;
     }
 

@@ -116,18 +116,3 @@
     } while (0)
 #endif /* defined(_TSL_DEBUG) && undefined(_TSL_NO_DIAG_TIMESTAMPS) */
 
-#define TRY_EXCEPT(x, ident, label)  if (AFAILED_UNLIKELY(x)) { MESSAGE(static_subsys__, SEV_FATAL, ident, "action_failed: %d", result); goto label; }
-
-#define SET_LOGGING_SYSTEM(s) static const char static_subsys__[] = s;
-
-#define GET_CONFIG_STRING(cfg, cfgkey, target, label) \
-    if (AFAILED(ret = config_get_string(cfg, target, cfgkey))) \
-{ MESSAGE(static_subsys__, SEV_FATAL, "NOCONFIG", "config_missing: %s", cfgkey); goto label; }
-
-#define GET_CONFIG_INT(cfg, cfgkey, target, label) \
-    if (AFAILED(ret = config_get_integer(cfg, target, cfgkey))) \
-{ MESSAGE(static_subsys__, SEV_FATAL, "NOCONFIG", "config_missing: %s", cfgkey); goto label; }
-
-#define GET_CONFIG_OBJECT(cfg, cfgkey, target, label) \
-    if (AFAILED(ret = config_get(cfg, target, cfgkey))) \
-{ MESSAGE(static_subsys__, SEV_FATAL, "NOCONFIG", "config_missing: %s", cfgkey); goto label; }

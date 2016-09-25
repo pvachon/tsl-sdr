@@ -154,7 +154,7 @@ aresult_t frame_alloc_new(struct frame_alloc **palloc, uint64_t frame_bytes, uin
     }
 
     /* Allocate the frame allocator object */
-    if (AFAILED(ret = TZAALLOC(fa, SYS_CACHE_LINE_LENGTH))) {
+    if (FAILED(ret = TZAALLOC(fa, SYS_CACHE_LINE_LENGTH))) {
         goto done;
     }
 
@@ -177,7 +177,7 @@ aresult_t frame_alloc_new(struct frame_alloc **palloc, uint64_t frame_bytes, uin
     *palloc = fa;
 
 done:
-    if (AFAILED(ret)) {
+    if (FAILED(ret)) {
         TFREE(fa);
 
         if (MAP_FAILED != rgn) {
@@ -233,7 +233,7 @@ aresult_t frame_free(struct frame_alloc *alloc, void **pframe)
     TSL_ASSERT_ARG(NULL != pframe);
     TSL_ASSERT_ARG(NULL != *pframe);
 
-    if (AFAILED_UNLIKELY(ret = _frame_alloc_push_free(alloc, *pframe))) {
+    if (FAILED_UNLIKELY(ret = _frame_alloc_push_free(alloc, *pframe))) {
         goto done;
     }
 

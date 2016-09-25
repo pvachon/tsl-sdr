@@ -41,12 +41,12 @@ aresult_t __app_append_unit_string(const char *str)
 
     _nr_units_to_exec++;
 
-    if (AFAILED(ret = TREALLOC((void **)&_units_to_execute, sizeof(char *) * (_nr_units_to_exec + 1)))) {
+    if (FAILED(ret = TREALLOC((void **)&_units_to_execute, sizeof(char *) * (_nr_units_to_exec + 1)))) {
         DIAG("Error while allocating.");
         goto done;
     }
 
-    if (AFAILED(ret = tstrdup((char **)&_units_to_execute[_nr_units_to_exec - 1], str))) {
+    if (FAILED(ret = tstrdup((char **)&_units_to_execute[_nr_units_to_exec - 1], str))) {
         DIAG("Cannot strdup...");
         goto done;
     }
@@ -144,7 +144,7 @@ aresult_t _app_handle_args(int argc, char * const argv[], struct config *cfg)
             TSL_BUG_IF_FAILED(config_add(cfg, optarg));
             break;
         case 'M':
-            if (AFAILED(ret = _set_up_malloc_params(optarg))) {
+            if (FAILED(ret = _set_up_malloc_params(optarg))) {
                 TEST_MSG(SEV_ERROR, "INVALID-MALLOC-FLAG", "Error: Invalid malloc flag: '%s'", optarg);
                 goto done;
             }
@@ -181,14 +181,14 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (AFAILED(app_init(argv[0], cfg))) {
+    if (FAILED(app_init(argv[0], cfg))) {
         TEST_MSG(SEV_FATAL, "CANT_START_TSL", "Failed to initialize the Trading Standard Library.");
         goto done;
     }
 
     TEST_MSG(SEV_INFO, "STARTING_TEST", "Starting to execute test suites.");
 
-    if (AFAILED(tf_execute_all_test_suites(_units_to_execute))) {
+    if (FAILED(tf_execute_all_test_suites(_units_to_execute))) {
         TEST_MSG(SEV_INFO, "TESTS_FAILED", "One or more units within a suite failed to execute successfully.");
         goto done;
     }

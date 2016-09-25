@@ -57,7 +57,7 @@ TEST_DECL(test_refcnt_basic)
     TEST_ASSERT(test_failed == 0);
 
     /* Test 6: Try to release again */
-    TEST_ASSERT(AFAILED(refcnt_release(&first.rc)));
+    TEST_ASSERT(FAILED(refcnt_release(&first.rc)));
     TEST_ASSERT(first.rc.refcnt == 0);
 
     return TEST_OK;

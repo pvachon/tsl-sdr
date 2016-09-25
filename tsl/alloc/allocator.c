@@ -204,7 +204,7 @@ aresult_t allocator_system_init(size_t nr_slabs, size_t page_size, size_t nr_hug
     aresult_t ret = A_OK;
 
     if (0 < nr_slabs) {
-        if (AFAILED(ret =
+        if (FAILED(ret =
             __allocator_subsystem_init_page_class(&mgr.normal_slabs, nr_slabs, page_size, 0)))
         {
             goto done;
@@ -212,7 +212,7 @@ aresult_t allocator_system_init(size_t nr_slabs, size_t page_size, size_t nr_hug
     }
 
     if (0 < nr_huge_slabs) {
-        if (AFAILED(ret =
+        if (FAILED(ret =
             __allocator_subsystem_init_page_class(&mgr.huge_slabs, nr_huge_slabs, huge_page_bytes, MAP_HUGETLB)))
         {
             goto done;
@@ -345,7 +345,7 @@ aresult_t allocator_new(struct allocator **alloc, size_t item_size, size_t item_
         void *new_page = NULL;
         aresult_t page_result = __allocator_acquire_page(cls, &new_page);
 
-        if (AFAILED(page_result)) {
+        if (FAILED(page_result)) {
             ret = page_result;
             DIAG("Could not acquire allocator page.");
             goto done_cleanup;
@@ -362,7 +362,7 @@ aresult_t allocator_new(struct allocator **alloc, size_t item_size, size_t item_
     *alloc = new_alloc;
 
 done_cleanup:
-    if (AFAILED(ret)) {
+    if (FAILED(ret)) {
         DIAG("Failure during allocator allocation. Should free memory!");
     }
 
@@ -380,7 +380,7 @@ aresult_t __helper_allocator_grow(struct allocator *alloc)
     void *new_page = NULL;
     ret = __allocator_acquire_page(cls, &new_page);
 
-    if (AFAILED(ret)) {
+    if (FAILED(ret)) {
         goto done;
     }
 

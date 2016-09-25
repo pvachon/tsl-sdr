@@ -80,12 +80,12 @@ aresult_t worker_thread_new_mask(struct worker_thread *thr, worker_thread_work_f
 
     thr->st = WORKER_THREAD_STATE_STARTING_UP;
 
-    if (AFAILED(ret = thread_create(&thr->thr, __worker_thread_function, msk))) {
+    if (FAILED(ret = thread_create(&thr->thr, __worker_thread_function, msk))) {
         DIAG("Failed to spin up a work thread for the command interface.");
         goto done;
     }
 
-    if (AFAILED(ret = thread_start(thr->thr, thr))) {
+    if (FAILED(ret = thread_start(thr->thr, thr))) {
         DIAG("Failed to start worker thread.");
         goto done;
     }
@@ -94,7 +94,7 @@ aresult_t worker_thread_new_mask(struct worker_thread *thr, worker_thread_work_f
     *pmsk = NULL;
 
 done:
-    if (AFAILED(ret)) {
+    if (FAILED(ret)) {
         if (NULL != thr->thr) {
             thread_destroy(&thr->thr);
         }
@@ -112,21 +112,21 @@ aresult_t worker_thread_new(struct worker_thread *thr, worker_thread_work_func_t
     TSL_ASSERT_ARG(NULL != work_func);
 
     if (WORKER_THREAD_CPU_MASK_ANY != cpu_core) {
-        if (AFAILED(ret = cpu_mask_new(&msk))) {
+        if (FAILED(ret = cpu_mask_new(&msk))) {
             goto done;
         }
 
-        if (AFAILED(ret = cpu_mask_set(msk, cpu_core))) {
+        if (FAILED(ret = cpu_mask_set(msk, cpu_core))) {
             goto done;
         }
     }
 
-    if (AFAILED(ret = worker_thread_new_mask(thr, work_func, &msk))) {
+    if (FAILED(ret = worker_thread_new_mask(thr, work_func, &msk))) {
         goto done;
     }
 
 done:
-    if (AFAILED(ret)) {
+    if (FAILED(ret)) {
         if (NULL != msk) {
             cpu_mask_delete(&msk);
         }
@@ -169,7 +169,7 @@ aresult_t worker_thread_delete(struct worker_thread *thr)
     if (NULL != thr->thr) {
         aresult_t thr_ret = A_OK;
 
-        if (AFAILED(ret = thread_join(thr->thr, &thr_ret))) {
+        if (FAILED(ret = thread_join(thr->thr, &thr_ret))) {
             DIAG("Failed to join worker thread to parent thread.");
             goto done;
         }
