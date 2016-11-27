@@ -3,8 +3,11 @@
 #include <multifm/types.h>
 
 #include <tsl/cal.h>
+#include <tsl/result.h>
 
 #include <stdint.h>
+
+struct demod_thread;
 
 /**
  * A sample buffer. Represents a count of samples, with the specified
@@ -40,12 +43,6 @@ struct sample_buf {
     uint32_t sample_buf_bytes;
 
     /**
-     * The current offset in the buffer. This is used by a filtering process
-     * to track where it should output the next sample.
-     */
-    uint32_t sample_cur_loc;
-
-    /**
      * The start timestamp (in sample time) of this buffer
      */
     uint64_t start_time_ns;
@@ -55,4 +52,6 @@ struct sample_buf {
      */
     uint8_t data_buf[];
 };
+
+aresult_t sample_buf_decref(struct demod_thread *thr, struct sample_buf *buf);
 

@@ -36,7 +36,7 @@
 /**
  * calloc(3)-style callable, with alignment
  */
-#define TACALLOC(_ptr, _ct, _sz, _align) __builtin_choose_expr(__SAFE_IS_UL(_ct) && __SAFE_IS_UL(_sz), __safe_aligned_zalloc((_ptr), (_ct), (_sz), (_align)), __SAFE_FAIL2(_sz, _ct))
+#define TACALLOC(_ptr, _ct, _sz, _align) __safe_aligned_zalloc((_ptr), (_ct), (_sz), (_align))
 
 /**
  * Macro to help with allocating a single structure

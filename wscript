@@ -101,6 +101,7 @@ def configure(conf):
 		'rt',
 		'jansson',
 		'dl',
+		'm',
 	]
 
 	conf.env.LDFLAGS += [
@@ -154,6 +155,8 @@ def configure(conf):
 		'CONFIG_DIRECTORY_DEFAULT=\"/etc/tsl\"',
 	]
 
+	conf.check_cfg(package = 'fftw3f', atleast_version = '3.0.0', args = '--cflags --libs')
+
 def _preBuild(bld):
 	Logs.info('Pre %s...' % bld.cmd)
 
@@ -205,6 +208,14 @@ def build(bld):
 		use		= ['app', 'config', 'tsl', 'rtlsdr'],
 		target	= os.path.join(binPath, 'multifm'),
 		name	= 'multifm',
+	)
+
+	# FLEXer
+	bld.program(
+		source	= bld.path.ant_glob('flexer/*.c'),
+		use		= ['app', 'config', 'tsl'],
+		target	= os.path.join(binPath, 'flexer'),
+		name	= 'flexer',
 	)
 
 	#app
