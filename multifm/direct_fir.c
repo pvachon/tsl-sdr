@@ -7,6 +7,7 @@
 #include <tsl/safe_alloc.h>
 
 #include <string.h>
+#include <math.h>
 
 #define _DIRECT_FIR_IMPLEMENTATION
 
@@ -99,6 +100,9 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
     size_t coeffs_remain = 0,
            buf_offset = 0;
     struct sample_buf *cur_buf = NULL;
+    int16_t s_min = INT16_MAX,
+            s_max = INT16_MIN;
+    double s_total = 0.0;
 
     TSL_ASSERT_ARG_DEBUG(NULL != fir);
     TSL_ASSERT_ARG_DEBUG(NULL != psample_real);
@@ -123,21 +127,32 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
                start_coeff = fir->nr_coeffs - coeffs_remain;
 
         /* Snap to either the number of coefficients in the FIR or the number of remaining
-         * coefficients, whichever is larger.
+         * coefficients, whichever is smaller.
          */
-        nr_samples_in = nr_samples_in > coeffs_remain ? coeffs_remain : nr_samples_in;
+        //nr_samples_in = nr_samples_in > coeffs_remain ? coeffs_remain : nr_samples_in;
+        nr_samples_in = BL_MIN2(nr_samples_in, coeffs_remain);
 
+#if 0
         /* DEBUG: dump the current buffer state */
         if (nr_samples_in != fir->nr_coeffs) {
             DIAG("Samples in: %zu Buffer Base: %zu Start Coeff: %zu", nr_samples_in, buf_offset, start_coeff);
         }
+#endif
 
         for (size_t i = 0; i < nr_samples_in; i++) {
             TSL_BUG_ON(i + start_coeff >= fir->nr_coeffs);
             TSL_BUG_ON(i + buf_offset >= cur_buf->nr_samples);
 
-            int16_t raw_samp_re = *(((int16_t *)cur_buf->data_buf) + 2 * (buf_offset + i)    ),
-                    raw_samp_im = *(((int16_t *)cur_buf->data_buf) + 2 * (buf_offset + i) + 1);
+            int16_t *sample = &((int16_t *)cur_buf->data_buf)[2 * (buf_offset + i)];
+
+            int16_t raw_samp_re = sample[0],
+                    raw_samp_im = sample[1];
+
+            double s_mag = sqrt((double)raw_samp_re * (double)raw_samp_re + (double)raw_samp_im * (double)raw_samp_im);
+
+            s_min = BL_MIN2(s_min, (int16_t)s_mag);
+            s_max = BL_MAX2(s_max, (int16_t)s_mag);
+            s_total += s_mag;
 
             int64_t s_re = ((int64_t)raw_samp_re) << 23,
                     s_im = ((int64_t)raw_samp_im) << 23,
@@ -160,6 +175,11 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
         cur_buf = fir->sb_active;
         coeffs_remain -= nr_samples_in;
     } while (coeffs_remain != 0);
+
+#if 0
+    printf("S Stats: min: %d max: %d mean: %f o: (%zd, %zd) ~ (%f, %f)\n", (int)s_min, (int)s_max, s_total/fir->nr_coeffs,
+          acc_re >> 54, acc_im >> 54, (double)acc_re/(double)(1ll << 54), (double)acc_im/(double)(1ll << 54));
+#endif
 
     /* Check if the next sample will start in the following buffer; if so, move along */
     if (fir->sample_offset + fir->decimate_factor > fir->sb_active->nr_samples) {

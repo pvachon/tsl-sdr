@@ -1,6 +1,5 @@
 #include <multifm/multifm.h>
 #include <multifm/sambuf.h>
-#include <multifm/sring.h>
 #include <multifm/flex_fir_coeffs.h>
 #include <multifm/direct_fir.h>
 
@@ -196,7 +195,7 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         dthr->total_nr_fm_samples += nr_samples;
 
         /* 2. Perform quadrature demod, write to output demodulation buffer. */
-        /* TODO: smarten this up a lot */
+        /* TODO: smarten this up a lot - this sucks */
         dthr->nr_pcm_samples = 0;
 
         for (size_t i = 1; i < dthr->nr_fm_samples; i++) {
@@ -217,7 +216,8 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         }
 
         // XXX HACK
-        write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(uint16_t));
+        //write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(uint16_t));
+        write(dthr->fifo_fd, dthr->fm_samp_out_buf, (dthr->nr_fm_samples - 1) * sizeof(uint32_t) * 2);
 
         /* XXX move the last sample of the FM buffer to be the first sample; we'll use it
          * for the next round of quadrature demodulation.
@@ -301,6 +301,8 @@ aresult_t demod_thread_delete(struct demod_thread **pthr)
         thr->fifo_fd = -1;
     }
 
+    direct_fir_cleanup(&thr->fir);
+
     TFREE(thr);
 
     *pthr = NULL;
@@ -357,8 +359,7 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, int32_t offset_hz, uint32
         power += samp_power;
         dpower += ptemp;
 
-        fprintf(stderr, "    complex(%f, %f), %% (%d, %d) P: 0x%016zx ~~ %f\n", creal(lpf_tap), cimag(lpf_tap),
-                coeffs[i], coeffs[base + i], samp_power, ptemp);
+        fprintf(stderr, "    complex(%d, %d), %% (%f, %f) P: 0x%016zx ~~ %f\n", coeffs[i], coeffs[base + i], creal(lpf_tap), cimag(lpf_tap), samp_power, ptemp);
     }
     fprintf(stderr, "];\n");
     fprintf(stderr, "%% Total power: %zu (%016zx) (%f)\n", power, power, dpower);
@@ -461,6 +462,11 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
     int16_t *sbuf_ptr = NULL;
     struct demod_thread *dthr = NULL;
 
+    int16_t min = INT16_MAX,
+            max = INT16_MIN;
+    int64_t total = 0,
+            total_squared = 0;
+
     if (true == thr->muted) {
         DIAG("Worker is muted.");
         /* If the receiver side is muted, there's no need to process this buffer */
@@ -486,7 +492,18 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
         sbuf_ptr[i] = (int16_t)buf[i] - 127;
     }
 
-    sbuf->nr_samples = len/2;
+    for (size_t i = 0; i < len/2; i++) {
+        double samp = sqrt(sbuf_ptr[2 * i] * sbuf_ptr[2 * i] +
+                sbuf_ptr[2 * i + 1] * sbuf_ptr[2 * i + 1]);
+        min = BL_MIN2(min, samp);
+        max = BL_MAX2(max, samp);
+        total += samp + 0.5;
+        total_squared += samp * samp + 0.5;
+    }
+
+    printf("min: %d max: %d mean: %f\n", (int)min, (int)max, (double)total/(double)len);
+
+    sbuf->nr_samples = len / 2;
     atomic_store(&sbuf->refcount, thr->nr_demod_threads);
 
     /* TODO: Apply the DC filter.. maybe */
@@ -536,6 +553,11 @@ aresult_t __rtl_sdr_worker_set_gain(struct rtlsdr_dev *dev, int gain)
 
     TSL_ASSERT_ARG(NULL != dev);
 
+    /* Disable AGC */
+    if (0 != rtlsdr_set_agc_mode(dev, 0)) {
+        MFM_MSG(SEV_WARNING, "CANT-SET-AGC", "Failed to disable AGC.");
+    }
+
     if (0 >= (nr_gains = rtlsdr_get_tuner_gains(dev, NULL))) {
         MFM_MSG(SEV_ERROR, "CANT-GET-GAINS", "Unable to get list of supported gains.");
         ret = A_E_INVAL;
@@ -575,6 +597,8 @@ aresult_t __rtl_sdr_worker_set_gain(struct rtlsdr_dev *dev, int gain)
         goto done;
     }
 
+    DIAG("Setting RTLSDR gain to %d", real_gain);
+
     if (0 != rtlsdr_set_tuner_gain(dev, real_gain)) {
         MFM_MSG(SEV_ERROR, "FAILED-SET-GAIN", "Failed to set requested gain.");
         ret = A_E_INVAL;
@@ -611,6 +635,7 @@ aresult_t _rtl_sdr_worker_thread_new(
         decimation_factor = 0,
         dump_file_fd = -1;
     size_t arr_ctr = 0;
+    bool test_mode = false;
 
 
     TSL_ASSERT_ARG(NULL != cfg);
@@ -649,12 +674,23 @@ aresult_t _rtl_sdr_worker_thread_new(
 
     MFM_MSG(SEV_INFO, "DEV-IDX-OPEN", "Successfully opened device at index %d", dev_idx);
 
-#if 0
-    /* Disable AGC */
-    if (0 != rtlsdr_set_agc_mode(dev, 0)) {
-        MFM_MSG(SEV_WARNING, "CANT-SET-AGC", "Failed to disable AGC.");
+    TSL_BUG_ON(NULL == dev);
+
+    /* Set the sample rate */
+    MFM_MSG(SEV_INFO, "SAMPLE-RATE", "Setting sample rate to %u Hz", sample_rate);
+    if (0 != rtlsdr_set_sample_rate(dev, sample_rate)) {
+        MFM_MSG(SEV_ERROR, "BAD-SAMPLE-RATE", "Failed to set sample rate, aborting.");
+        ret = A_E_INVAL;
+        goto done;
     }
-#endif
+
+    /* Set the center frequency */
+    MFM_MSG(SEV_INFO, "CENTER-FREQ", "Setting Center Frequency to %u Hz", center_freq);
+    if (0 != rtlsdr_set_center_freq(dev, center_freq)) {
+        MFM_MSG(SEV_ERROR, "BAD-CENTER-FREQ", "Failed to set center frequency, aborting.");
+        ret = A_E_INVAL;
+        goto done;
+    }
 
     /* Set the gain, in deci-decibels */
     if (!FAILED(config_get_integer(cfg, &gain_ddb, "gaindDb"))) {
@@ -662,20 +698,6 @@ aresult_t _rtl_sdr_worker_thread_new(
         TSL_BUG_IF_FAILED(__rtl_sdr_worker_set_gain(dev, gain_ddb));
     } else {
         TSL_BUG_ON(0 != rtlsdr_set_tuner_gain_mode(dev, 0));
-    }
-
-    /* Debug option: Dump the raw samples from the RTL SDR to a file on disk */
-    if (!FAILED(config_get_string(cfg, &rtl_dump_file, "iqDumpFile"))) {
-        /* Open the file, exclusive */
-        if (0 > (dump_file_fd = open(rtl_dump_file, O_RDWR | O_CREAT | O_EXCL, 0666))) {
-            int errnum = errno;
-            MFM_MSG(SEV_INFO, "DUMP-FILE-FAIL", "Failed to create dump file '%s' - reason: '%s' (%d)",
-                    rtl_dump_file, strerror(errnum), errnum);
-            ret = A_E_INVAL;
-            goto done;
-        }
-        MFM_MSG(SEV_INFO, "DUMP-TO-FILE", "Dumping raw I-Q samples as 8-bit interleaved to '%s'",
-                rtl_dump_file);
     }
 
     /* Set the PPM correction, if specified */
@@ -694,24 +716,25 @@ aresult_t _rtl_sdr_worker_thread_new(
 
     MFM_MSG(SEV_INFO, "FREQ-CORR", "Set frequency correction to %d PPM", ppm_corr);
 
+    /* Debug option: Dump the raw samples from the RTL SDR to a file on disk */
+    if (!FAILED(config_get_string(cfg, &rtl_dump_file, "iqDumpFile"))) {
+        /* Open the file, exclusive */
+        if (0 > (dump_file_fd = open(rtl_dump_file, O_RDWR | O_CREAT | O_EXCL, 0666))) {
+            int errnum = errno;
+            MFM_MSG(SEV_INFO, "DUMP-FILE-FAIL", "Failed to create dump file '%s' - reason: '%s' (%d)",
+                    rtl_dump_file, strerror(errnum), errnum);
+            ret = A_E_INVAL;
+            goto done;
+        }
+        MFM_MSG(SEV_INFO, "DUMP-TO-FILE", "Dumping raw I-Q samples as 8-bit interleaved to '%s'",
+                rtl_dump_file);
+    }
+
+
     /* Reset the endpoint */
     TSL_BUG_ON(0 != rtlsdr_reset_buffer(dev));
 
-    /* Set the center frequency */
-    MFM_MSG(SEV_INFO, "CENTER-FREQ", "Setting Center Frequency to %u Hz", center_freq);
-    if (0 != rtlsdr_set_center_freq(dev, center_freq)) {
-        MFM_MSG(SEV_ERROR, "BAD-CENTER-FREQ", "Failed to set center frequency, aborting.");
-        ret = A_E_INVAL;
-        goto done;
-    }
-
-    /* Set the sample rate */
-    MFM_MSG(SEV_INFO, "SAMPLE-RATE", "Setting sample rate to %u Hz", sample_rate);
-    if (0 != rtlsdr_set_sample_rate(dev, sample_rate)) {
-        MFM_MSG(SEV_ERROR, "BAD-SAMPLE-RATE", "Failed to set sample rate, aborting.");
-        ret = A_E_INVAL;
-        goto done;
-    }
+    DIAG("Gain set to: %f", (double)rtlsdr_get_tuner_gain(dev)/10.0);
 
     /* Create the worker thread context */
     if (FAILED(TZAALLOC(thr, SYS_CACHE_LINE_LENGTH))) {
@@ -730,6 +753,16 @@ aresult_t _rtl_sdr_worker_thread_new(
         MFM_MSG(SEV_ERROR, "MISSING-CHANNELS", "Need to specify at least one channel to demodulate.");
         ret = A_E_INVAL;
         goto done;
+    }
+
+    /* For debugging purposes, enable test mode. */
+    if (!FAILED(ret = config_get_boolean(cfg, &test_mode, "sdrTestMode")) & (true == test_mode)) {
+        MFM_MSG(SEV_INFO, "TEST-MODE", "Enabling RTL-SDR test mode");
+        if (0 != rtlsdr_set_testmode(dev, 1)) {
+            MFM_MSG(SEV_ERROR, "CANT-SET-TEST-MODE", "Failed to enable test mode, aborting.");
+            ret = A_E_INVAL;
+            goto done;
+        }
     }
 
     CONFIG_ARRAY_FOR_EACH(channel, &channels, ret, arr_ctr) {

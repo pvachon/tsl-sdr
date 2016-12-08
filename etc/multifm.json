@@ -1,0 +1,30 @@
+{
+  "deviceIndex" : 0,
+  "gaindDb" : 200,
+  "sampleRateHz" : 1000000,
+  "centerFreqHz" : 929500000,
+  "nrSampBufs" : 128,
+  "decimationFactor" : 40,
+  "channels" : [
+    {
+      "outFifo" : "/home/pvachon/ch4.out",
+      "chanCenterFreq" : 929938000
+    },
+    {
+      "outFifo" : "/home/pvachon/ch3.out",
+      "chanCenterFreq" : 929362500
+    },
+    {
+      "outFifo" : "/home/pvachon/ch2.out",
+      "chanCenterFreq" : 929662500
+    },
+    {
+      "outFifo" : "/home/pvachon/ch1.out",
+      "chanCenterFreq" : 929637500
+    },
+    {
+      "outFifo" : "/home/pvachon/ch0.out",
+      "chanCenterFreq" : 929612500
+    }
+  ]
+}
