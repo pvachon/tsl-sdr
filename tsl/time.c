@@ -177,6 +177,8 @@ aresult_t tsl_calc_clockfreq(uint64_t *clock_hz)
 
     ret = A_OK;
 done:
+    TFREE(cpuinfo);
+
     if (fd >= 0) {
         close(fd);
     }
