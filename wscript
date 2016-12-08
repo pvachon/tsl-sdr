@@ -210,14 +210,6 @@ def build(bld):
 		name	= 'multifm',
 	)
 
-	# FLEXer
-	bld.program(
-		source	= bld.path.ant_glob('flexer/*.c'),
-		use		= ['app', 'config', 'tsl'],
-		target	= os.path.join(binPath, 'flexer'),
-		name	= 'flexer',
-	)
-
 	#app
 	bld.stlib(
 		source   = bld.path.ant_glob('app/*.c'),

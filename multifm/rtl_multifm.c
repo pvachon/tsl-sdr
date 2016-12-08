@@ -209,7 +209,8 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
 
             dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int64_t)(0.5*(sample/M_PI) * (1ll << 14));
 #if 0
-            dthr->pcm_out_buf[dthr->nr_pcm_samples * 2] = (int64_t)(dthr->fm_samp_out_buf[2 * i] >> 16);
+            dthr->pcm_out_buf[dthr->nr_pcm_samples * 2] = (int64_t)(dthr->fm_samp_out_buf[2 * i]);
+            dthr->pcm_out_buf[dthr->nr_pcm_samples * 2 + 1] = (int64_t)(dthr->fm_samp_out_buf[2 * i + 1]);
 #endif
 
             dthr->nr_pcm_samples++;
@@ -217,7 +218,7 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
 
         // XXX HACK
         //write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(uint16_t));
-        write(dthr->fifo_fd, dthr->fm_samp_out_buf, (dthr->nr_fm_samples - 1) * sizeof(uint32_t) * 2);
+        write(dthr->fifo_fd, dthr->fm_samp_out_buf + 1, (dthr->nr_fm_samples - 1) * sizeof(uint32_t) * 2);
 
         /* XXX move the last sample of the FM buffer to be the first sample; we'll use it
          * for the next round of quadrature demodulation.
@@ -343,7 +344,7 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, int32_t offset_hz, uint32
     fprintf(stderr, "lpf_shifted_%d = [\n", offset_hz);
     for (size_t i = 0; i < LPF_NR_COEFFS; i++) {
         /* Calculate the new tap coefficient */
-        double complex lpf_tap = cexp(CMPLX(0, f_offs * (double)i)) * lpf_taps[i];
+        double complex lpf_tap = cexp(CMPLX(0, -f_offs * (double)i)) * lpf_taps[i];
         double q31 = 1ll << 31,
                ptemp = 0;
         int64_t samp_power = 0;
@@ -729,7 +730,6 @@ aresult_t _rtl_sdr_worker_thread_new(
         MFM_MSG(SEV_INFO, "DUMP-TO-FILE", "Dumping raw I-Q samples as 8-bit interleaved to '%s'",
                 rtl_dump_file);
     }
-
 
     /* Reset the endpoint */
     TSL_BUG_ON(0 != rtlsdr_reset_buffer(dev));
