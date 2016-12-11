@@ -1,6 +1,5 @@
 #include <multifm/multifm.h>
 #include <multifm/sambuf.h>
-#include <multifm/flex_fir_coeffs.h>
 #include <multifm/direct_fir.h>
 
 #include <config/engine.h>
@@ -23,6 +22,7 @@
 #include <math.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <rtl-sdr.h>
 
@@ -179,8 +179,9 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
     TSL_ASSERT_ARG(NULL != sbuf);
 
     TSL_BUG_IF_FAILED(direct_fir_push_sample_buf(&dthr->fir, sbuf));
-
     TSL_BUG_IF_FAILED(direct_fir_can_process(&dthr->fir, &can_process, NULL));
+
+    TSL_BUG_ON(false == can_process);
 
     while (true == can_process) {
         size_t nr_samples = 0;
@@ -199,32 +200,34 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         dthr->nr_pcm_samples = 0;
 
         for (size_t i = 1; i < dthr->nr_fm_samples; i++) {
-            int32_t a_re = dthr->fm_samp_out_buf[2 * (i - 1)    ],
-                    a_im = dthr->fm_samp_out_buf[2 * (i - 1) + 1],
-                    b_re = dthr->fm_samp_out_buf[2 *  i         ],
-                    b_im = dthr->fm_samp_out_buf[2 *  i      + 1];
+            TSL_BUG_ON(LPF_PCM_OUTPUT_LEN <= dthr->nr_pcm_samples);
+            int32_t b_re =  dthr->fm_samp_out_buf[2 * (i - 1)    ],
+                    b_im = -dthr->fm_samp_out_buf[2 * (i - 1) + 1],
+                    a_re =  dthr->fm_samp_out_buf[2 *  i         ],
+                    a_im =  dthr->fm_samp_out_buf[2 *  i      + 1];
             int32_t s_re = a_re * b_re - a_im * b_im,
                     s_im = a_im * b_re + a_re * b_im;
             double sample = atan2((double)s_im, (double)s_re);
 
-            dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int64_t)(0.5*(sample/M_PI) * (1ll << 14));
-#if 0
-            dthr->pcm_out_buf[dthr->nr_pcm_samples * 2] = (int64_t)(dthr->fm_samp_out_buf[2 * i]);
-            dthr->pcm_out_buf[dthr->nr_pcm_samples * 2 + 1] = (int64_t)(dthr->fm_samp_out_buf[2 * i + 1]);
-#endif
-
+            dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)(sample/3.14159 * (double)(1ll << 15));
             dthr->nr_pcm_samples++;
         }
 
         // XXX HACK
-        //write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(uint16_t));
-        write(dthr->fifo_fd, dthr->fm_samp_out_buf + 1, (dthr->nr_fm_samples - 1) * sizeof(uint32_t) * 2);
+        DIAG("Writing %u samples (%zu bytes)", dthr->nr_pcm_samples, sizeof(int16_t) * dthr->nr_pcm_samples);
+        if (0 > write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(int16_t))) {
+            int errnum = errno;
+            PANIC("Failed to write %zu bytes to the output fifo. Reason: %s (%d)", sizeof(int16_t) * dthr->nr_pcm_samples,
+                    strerror(errnum), errnum);
+        }
+        //write(dthr->fifo_fd, dthr->fm_samp_out_buf + 1, (dthr->nr_fm_samples - 1) * sizeof(uint32_t) * 2);
 
         /* XXX move the last sample of the FM buffer to be the first sample; we'll use it
          * for the next round of quadrature demodulation.
          */
+        dthr->fm_samp_out_buf[0] = dthr->fm_samp_out_buf[2 * (dthr->nr_fm_samples - 1)];
+        dthr->fm_samp_out_buf[1] = dthr->fm_samp_out_buf[2 * (dthr->nr_fm_samples - 1) + 1];
         dthr->nr_fm_samples = 1;
-        dthr->fm_samp_out_buf[0] = dthr->fm_samp_out_buf[dthr->nr_fm_samples - 1];
 
         /* 3. Stretch goal: resample 25kHz to 22,050kHz */
 
@@ -315,6 +318,8 @@ aresult_t demod_thread_delete(struct demod_thread **pthr)
  * Prepare a FIR for channelizing. Converts tuned LPF to a band-pass filter.
  *
  * \param thr The thread to attach the FIR to
+ * \param lpf_taps The taps for the direct-form FIR. These are real, the filter must be at baseband.
+ * \param lpf_nr_taps The number of taps in the direct-form FIR. This is the order of the filter + 1.
  * \param offset_hz The offset, in hertz, from the center frequency
  * \param sample_rate The sample rate of the input stream
  * \param decimation The decimation factor for the output from this FIR.
@@ -322,51 +327,63 @@ aresult_t demod_thread_delete(struct demod_thread **pthr)
  * \return A_OK on success, an error code otherwise
  */
 static
-aresult_t _demod_fir_prepare(struct demod_thread *thr, int32_t offset_hz, uint32_t sample_rate, int decimation)
+aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t lpf_nr_taps, int32_t offset_hz, uint32_t sample_rate, int decimation)
 {
     aresult_t ret = A_OK;
 
     int32_t *coeffs = NULL;
+    double f_offs = -2.0 * M_PI * (double)offset_hz / (double)sample_rate;
+#ifdef _DUMP_LPF
     int64_t power = 0;
-    double f_offs = 2.0 * M_PI * (double)offset_hz / (double)sample_rate,
-           dpower = 0.0;
-    size_t base = LPF_NR_COEFFS;
+    double dpower = 0.0;
+#endif /* defined(_DUMP_LPF) */
+    size_t base = lpf_nr_taps;
 
     DIAG("Preparing LPF for offset %d Hz", offset_hz);
 
     TSL_ASSERT_ARG(NULL != thr);
+    TSL_ASSERT_ARG(NULL != lpf_taps);
+    TSL_ASSERT_ARG(0 != lpf_nr_taps);
 
-    if (FAILED(ret = TACALLOC((void *)&coeffs, LPF_NR_COEFFS, sizeof(int32_t) * 2, SYS_CACHE_LINE_LENGTH))) {
+    if (FAILED(ret = TACALLOC((void *)&coeffs, lpf_nr_taps, sizeof(int32_t) * 2, SYS_CACHE_LINE_LENGTH))) {
         MFM_MSG(SEV_FATAL, "NO-MEM", "Out of memory for FIR.");
         goto done;
     }
 
+#ifdef _DUMP_LPF
     fprintf(stderr, "lpf_shifted_%d = [\n", offset_hz);
-    for (size_t i = 0; i < LPF_NR_COEFFS; i++) {
+#endif /* defined(_DUMP_LPF) */
+
+    for (size_t i = 0; i < lpf_nr_taps; i++) {
         /* Calculate the new tap coefficient */
-        double complex lpf_tap = cexp(CMPLX(0, -f_offs * (double)i)) * lpf_taps[i];
-        double q31 = 1ll << 31,
-               ptemp = 0;
+        double complex lpf_tap = cexp(CMPLX(0, f_offs * (double)i)) * lpf_taps[i];
+        double q31 = 1ll << 31;
+#ifdef _DUMP_LPF
+        double ptemp = 0;
         int64_t samp_power = 0;
+#endif
 
         /* Calculate the Q31 coefficient */
         coeffs[       i] = (int32_t)(creal(lpf_tap) * q31 + 0.5);
         coeffs[base + i] = (int32_t)(cimag(lpf_tap) * q31 + 0.5);
 
+#ifdef _DUMP_LPF
         ptemp = sqrt( (creal(lpf_tap) * creal(lpf_tap)) + (cimag(lpf_tap) * cimag(lpf_tap)) );
-
         samp_power = sqrt( ((int64_t)coeffs[i] * (int64_t)coeffs[i]) + ((int64_t)coeffs[base + i] * (int64_t)coeffs[base + i]) ) + 0.5;
 
         power += samp_power;
         dpower += ptemp;
 
         fprintf(stderr, "    complex(%d, %d), %% (%f, %f) P: 0x%016zx ~~ %f\n", coeffs[i], coeffs[base + i], creal(lpf_tap), cimag(lpf_tap), samp_power, ptemp);
+#endif /* defined(_DUMP_LPF) */
     }
+#ifdef _DUMP_LPF
     fprintf(stderr, "];\n");
     fprintf(stderr, "%% Total power: %zu (%016zx) (%f)\n", power, power, dpower);
+#endif /* defined(_DUMP_LPF) */
 
     /* Create a Direct Type FIR implementation */
-    TSL_BUG_IF_FAILED(direct_fir_init(&thr->fir, LPF_NR_COEFFS, coeffs, &coeffs[base], decimation, thr));
+    TSL_BUG_IF_FAILED(direct_fir_init(&thr->fir, lpf_nr_taps, coeffs, &coeffs[base], decimation, thr));
 
 done:
     if (NULL != coeffs) {
@@ -378,7 +395,8 @@ done:
 
 static
 aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id, struct frame_alloc *samp_buf_alloc,
-        int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor)
+        int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
+        double *lpf_taps, size_t lpf_nr_taps)
 {
     aresult_t ret = A_OK;
 
@@ -387,6 +405,9 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id, struct 
     TSL_ASSERT_ARG(NULL != pthr);
     TSL_ASSERT_ARG(NULL != samp_buf_alloc);
     TSL_ASSERT_ARG(NULL != out_fifo && '\0' != *out_fifo);
+    TSL_ASSERT_ARG(0 != decimation_factor);
+    TSL_ASSERT_ARG(NULL != lpf_taps);
+    TSL_ASSERT_ARG(0 != lpf_nr_taps);
 
     *pthr = NULL;
 
@@ -412,7 +433,7 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id, struct 
     }
 
     /* Initialize the filter */
-    if (FAILED(ret = _demod_fir_prepare(thr, offset_hz, samp_hz, decimation_factor))) {
+    if (FAILED(ret = _demod_fir_prepare(thr, lpf_taps, lpf_nr_taps, offset_hz, samp_hz, decimation_factor))) {
         goto done;
     }
 
@@ -463,10 +484,12 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
     int16_t *sbuf_ptr = NULL;
     struct demod_thread *dthr = NULL;
 
+#ifdef _DUMP_SAMPLE_STATS
     int16_t min = INT16_MAX,
             max = INT16_MIN;
     int64_t total = 0,
             total_squared = 0;
+#endif
 
     if (true == thr->muted) {
         DIAG("Worker is muted.");
@@ -493,6 +516,7 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
         sbuf_ptr[i] = (int16_t)buf[i] - 127;
     }
 
+#ifdef _DUMP_SAMPLE_STATS
     for (size_t i = 0; i < len/2; i++) {
         double samp = sqrt(sbuf_ptr[2 * i] * sbuf_ptr[2 * i] +
                 sbuf_ptr[2 * i + 1] * sbuf_ptr[2 * i + 1]);
@@ -503,6 +527,7 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
     }
 
     printf("min: %d max: %d mean: %f\n", (int)min, (int)max, (double)total/(double)len);
+#endif
 
     sbuf->nr_samples = len / 2;
     atomic_store(&sbuf->refcount, thr->nr_demod_threads);
@@ -630,13 +655,15 @@ aresult_t _rtl_sdr_worker_thread_new(
     const char *rtl_dump_file = NULL;
     int dev_idx = -1,
         rret = 0,
-        gain_ddb = 0,
         ppm_corr = 0,
         rtl_ret = 0,
         decimation_factor = 0,
         dump_file_fd = -1;
-    size_t arr_ctr = 0;
+    size_t arr_ctr = 0,
+           lpf_nr_taps = 0;
     bool test_mode = false;
+    double *lpf_taps = NULL;
+    double gain_db = 0.0;
 
 
     TSL_ASSERT_ARG(NULL != cfg);
@@ -656,6 +683,18 @@ aresult_t _rtl_sdr_worker_thread_new(
     if (0 >= decimation_factor) {
         MFM_MSG(SEV_ERROR, "BAD-DECIMATION-FACTOR", "Decimation factor of '%d' is not valid.",
                 decimation_factor);
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+    /* Check that there's a filter specified */
+    if (FAILED(ret = config_get_float_array(cfg, &lpf_taps, &lpf_nr_taps, "lpfTaps"))) {
+        MFM_MSG(SEV_ERROR, "BAD-FILTER-TAPS", "Need to provide a baseband filter with at least two filter taps as 'lpfTaps'.");
+        goto done;
+    }
+
+    if (1 >= lpf_nr_taps) {
+        MFM_MSG(SEV_ERROR, "INSUFF-FILTER-TAPS", "Not enough filter taps for the low-pass filter.");
         ret = A_E_INVAL;
         goto done;
     }
@@ -694,10 +733,11 @@ aresult_t _rtl_sdr_worker_thread_new(
     }
 
     /* Set the gain, in deci-decibels */
-    if (!FAILED(config_get_integer(cfg, &gain_ddb, "gaindDb"))) {
+    if (!FAILED(config_get_float(cfg, &gain_db, "dBGain"))) {
         /* Set the receiver gain based on the value in config */
-        TSL_BUG_IF_FAILED(__rtl_sdr_worker_set_gain(dev, gain_ddb));
+        TSL_BUG_IF_FAILED(__rtl_sdr_worker_set_gain(dev, gain_db * 10));
     } else {
+        MFM_MSG(SEV_INFO, "AUTO-GAIN-CONTROL", "Enabling automatic gain control.");
         TSL_BUG_ON(0 != rtlsdr_set_tuner_gain_mode(dev, 0));
     }
 
@@ -784,7 +824,7 @@ aresult_t _rtl_sdr_worker_thread_new(
 
         /* Create demodulator thread object */
         if (FAILED(demod_thread_new(&dmt, -1, samp_buf_alloc, (int32_t)nb_center_freq - center_freq,
-                        sample_rate, fifo_name, decimation_factor)))
+                        sample_rate, fifo_name, decimation_factor, lpf_taps, lpf_nr_taps)))
         {
             MFM_MSG(SEV_ERROR, "FAILED-DEMOD-THREAD", "Failed to create demodulator thread, aborting.");
             goto done;
@@ -808,6 +848,10 @@ aresult_t _rtl_sdr_worker_thread_new(
     *pthr = thr;
 
 done:
+    if (NULL != lpf_taps) {
+        TFREE(lpf_taps);
+    }
+
     if (FAILED(ret)) {
         if (0 >= dump_file_fd) {
             close(dump_file_fd);
@@ -921,6 +965,7 @@ int main(int argc, const char *argv[])
             MFM_MSG(SEV_FATAL, "MALFORMED-CONFIG", "Configuration file [%s] is malformed.", argv[i]);
             goto done;
         }
+        DIAG("Added configuration file '%s'", argv[i]);
     }
 
     /* Initialize the app framework */
