@@ -1,0 +1,14 @@
+{
+  "deviceIndex" : 0,
+  "dBGain" : 20.7,
+  "sampleRateHz" : 1000000,
+  "centerFreqHz" : 929500000,
+  "nrSampBufs" : 128,
+  "decimationFactor" : 40,
+  "channels" : [
+    {
+      "outFifo" : "/home/pvachon/ch0.out",
+      "chanCenterFreq" : 929938000
+    }
+  ]
+}
