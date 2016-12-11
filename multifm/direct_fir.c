@@ -7,7 +7,9 @@
 #include <tsl/safe_alloc.h>
 
 #include <string.h>
+#if 0
 #include <math.h>
+#endif
 
 #define _DIRECT_FIR_IMPLEMENTATION
 
@@ -100,9 +102,11 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
     size_t coeffs_remain = 0,
            buf_offset = 0;
     struct sample_buf *cur_buf = NULL;
+#if 0
     int16_t s_min = INT16_MAX,
             s_max = INT16_MIN;
     double s_total = 0.0;
+#endif
 
     TSL_ASSERT_ARG_DEBUG(NULL != fir);
     TSL_ASSERT_ARG_DEBUG(NULL != psample_real);
@@ -129,7 +133,6 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
         /* Snap to either the number of coefficients in the FIR or the number of remaining
          * coefficients, whichever is smaller.
          */
-        //nr_samples_in = nr_samples_in > coeffs_remain ? coeffs_remain : nr_samples_in;
         nr_samples_in = BL_MIN2(nr_samples_in, coeffs_remain);
 
 #if 0
@@ -148,11 +151,13 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
             int16_t raw_samp_re = sample[0],
                     raw_samp_im = sample[1];
 
+#if 0
             double s_mag = sqrt((double)raw_samp_re * (double)raw_samp_re + (double)raw_samp_im * (double)raw_samp_im);
 
             s_min = BL_MIN2(s_min, (int16_t)s_mag);
             s_max = BL_MAX2(s_max, (int16_t)s_mag);
             s_total += s_mag;
+#endif
 
             int64_t s_re = ((int64_t)raw_samp_re) << 23,
                     s_im = ((int64_t)raw_samp_im) << 23,
@@ -172,7 +177,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
 
         /* If we iterate through, we'll start at the beginning of the next buffer */
         buf_offset = 0;
-        cur_buf = fir->sb_active;
+        cur_buf = fir->sb_next;
         coeffs_remain -= nr_samples_in;
     } while (coeffs_remain != 0);
 

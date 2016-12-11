@@ -95,6 +95,16 @@ struct demod_thread {
     int fifo_fd;
 
     /**
+     * The last FM sample of the prior buffer, I sample
+     */
+    int32_t last_fm_re;
+
+    /**
+     * The last FM sample of the prior buffer, Q sample
+     */
+    int32_t last_fm_im;
+
+    /**
      * Mutex for the work queue. Always must be held while manipulating it.
      */
     pthread_mutex_t wq_mtx;
@@ -199,35 +209,39 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         /* TODO: smarten this up a lot - this sucks */
         dthr->nr_pcm_samples = 0;
 
-        for (size_t i = 1; i < dthr->nr_fm_samples; i++) {
+        for (size_t i = 0; i < dthr->nr_fm_samples; i++) {
             TSL_BUG_ON(LPF_PCM_OUTPUT_LEN <= dthr->nr_pcm_samples);
-            int32_t b_re =  dthr->fm_samp_out_buf[2 * (i - 1)    ],
-                    b_im = -dthr->fm_samp_out_buf[2 * (i - 1) + 1],
+            int32_t b_re =  dthr->last_fm_re,
+                    b_im = -dthr->last_fm_im,
                     a_re =  dthr->fm_samp_out_buf[2 *  i         ],
                     a_im =  dthr->fm_samp_out_buf[2 *  i      + 1];
+
             int32_t s_re = a_re * b_re - a_im * b_im,
                     s_im = a_im * b_re + a_re * b_im;
+
             double sample = atan2((double)s_im, (double)s_re);
 
             dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)(sample/3.14159 * (double)(1ll << 15));
             dthr->nr_pcm_samples++;
+
+            /* Store the last sample processed */
+            dthr->last_fm_re = a_re;
+            dthr->last_fm_im = a_im;
         }
 
         // XXX HACK
         DIAG("Writing %u samples (%zu bytes)", dthr->nr_pcm_samples, sizeof(int16_t) * dthr->nr_pcm_samples);
+#if 0
         if (0 > write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(int16_t))) {
             int errnum = errno;
             PANIC("Failed to write %zu bytes to the output fifo. Reason: %s (%d)", sizeof(int16_t) * dthr->nr_pcm_samples,
                     strerror(errnum), errnum);
         }
-        //write(dthr->fifo_fd, dthr->fm_samp_out_buf + 1, (dthr->nr_fm_samples - 1) * sizeof(uint32_t) * 2);
+#endif
+        write(dthr->fifo_fd, dthr->fm_samp_out_buf, dthr->nr_fm_samples * sizeof(uint32_t) * 2);
 
-        /* XXX move the last sample of the FM buffer to be the first sample; we'll use it
-         * for the next round of quadrature demodulation.
-         */
-        dthr->fm_samp_out_buf[0] = dthr->fm_samp_out_buf[2 * (dthr->nr_fm_samples - 1)];
-        dthr->fm_samp_out_buf[1] = dthr->fm_samp_out_buf[2 * (dthr->nr_fm_samples - 1) + 1];
-        dthr->nr_fm_samples = 1;
+        /* We're done with this batch of samples, woohoo */
+        dthr->nr_fm_samples = 0;
 
         /* 3. Stretch goal: resample 25kHz to 22,050kHz */
 
