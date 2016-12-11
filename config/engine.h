@@ -83,6 +83,7 @@ aresult_t config_array_at_integer(struct config *array, int *item, size_t index)
 aresult_t config_array_at_size(struct config *array, size_t *item, size_t index);
 aresult_t config_array_at_string(struct config *array, const char **item, size_t index);
 aresult_t config_array_at_sockaddr(struct config *array, struct sockaddr *saddr, size_t *plen, size_t index);
+aresult_t config_array_at_float(struct config *array, double *item, size_t index);
 
 /**
  * Retrieve the item by type (substitutes the appropriate function call) for arrays.
@@ -116,14 +117,28 @@ aresult_t config_array_at_sockaddr(struct config *array, struct sockaddr *saddr,
             (__ctr)++)
 
 /**
- * Return the length of an array atom, if the specified atom is an array.
+ * Return a C array of integer values in a configuration.
+ *
  * \param cfg The atom to query
  * \param pvals The pointer to the point which will accept the allocated array (YOU MUST TFREE THIS!).
  * \param length The length, by reference
  * \param item_id The ID of the config atom to parse this from
+ *
  * \return A_OK on success, an error code otherwise
  */
 aresult_t config_get_integer_array(struct config *cfg, int **pvals, size_t *length, const char *item_id);
+
+/**
+ * Return a C array of floating point values.
+ *
+ * \param cfg The atom to query
+ * \param pvals The pointer to the point which will accept the allocated array (YOU MUST TFREE THIS!).
+ * \param length The length, by reference
+ * \param item_id The ID of the config atom to parse this from
+ *
+ * \return A_OK on success, an error code otherwise
+ */
+aresult_t config_get_float_array(struct config *cfg, double **pvals, size_t *length, const char *item_id);
 
 /**
  * Return the length of an array atom, if the specified atom is an array.
@@ -136,6 +151,7 @@ aresult_t config_get_integer_array(struct config *cfg, int **pvals, size_t *leng
 aresult_t config_get_size_array(struct config *cfg, size_t **pvals, size_t *length, const char *item_id);
 
 aresult_t config_get_integer(struct config *cfg, int *val, const char *item_id);
+aresult_t config_get_float(struct config *cfg, double *val, const char *item_id);
 aresult_t config_get_size(struct config *cfg, size_t *val, const char *item_id);
 aresult_t config_get_string(struct config *cfg, const char **val, const char *item_id);
 aresult_t config_get_boolean(struct config *cfg, bool *val, const char *item_id);

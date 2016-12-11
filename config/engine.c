@@ -442,6 +442,31 @@ done:
     return ret;
 }
 
+aresult_t config_array_at_float(struct config *array, double *item, size_t index)
+{
+    aresult_t ret = A_OK;
+    struct config atm;
+
+    TSL_ASSERT_ARG(NULL != array);
+    TSL_ASSERT_ARG(NULL != item);
+
+    *item = 0;
+
+    if (FAILED(ret = config_array_at(array, &atm, index))) {
+        goto done;
+    }
+
+    if (atm.atom_type != CONFIG_ATOM_FLOAT) {
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+    *item = atm.atom_float;
+
+done:
+    return ret;
+}
+
 aresult_t config_array_at_size(struct config *array, size_t *item, size_t index)
 {
     aresult_t ret = A_OK;
@@ -494,6 +519,49 @@ aresult_t config_array_at_string(struct config *array, const char **item, size_t
     *item = atm.atom_string;
 
 done:
+    return ret;
+}
+
+aresult_t config_get_float_array(struct config *cfg, double **pvals, size_t *length, const char *item_id)
+{
+    aresult_t ret = A_OK;
+
+    struct config atm;
+    double *vals = NULL;
+
+    TSL_ASSERT_ARG(NULL != cfg);
+    TSL_ASSERT_ARG(NULL != pvals);
+    TSL_ASSERT_ARG(NULL != length);
+    TSL_ASSERT_ARG(NULL != item_id);
+    TSL_ASSERT_ARG('\0' != *item_id);
+
+    *pvals = NULL;
+
+    if (FAILED(ret = config_get(cfg, &atm, item_id))) {
+        goto done;
+    }
+
+    if (FAILED(ret = config_array_length(&atm, length))) {
+        goto done;
+    }
+
+    if (FAILED(ret = TCALLOC((void **)&vals, *length, sizeof(double)))) {
+        goto done;
+    }
+
+    for (size_t i = 0; i < *length; i++) {
+        if (FAILED(ret = config_array_at_float(&atm, vals + i, i))) {
+            goto done;
+        }
+    }
+
+    *pvals = vals;
+
+done:
+    if (FAILED(ret)) {
+        TFREE(vals);
+    }
+
     return ret;
 }
 
@@ -591,6 +659,31 @@ aresult_t config_get_integer(struct config *cfg, int *val, const char *item_id)
     }
 
     *val = atm.atom_integer;
+
+done:
+    return ret;
+}
+
+aresult_t config_get_float(struct config *cfg, double *val, const char *item_id)
+{
+    aresult_t ret = A_OK;
+    struct config atm;
+
+    TSL_ASSERT_ARG(NULL != cfg);
+    TSL_ASSERT_ARG(NULL != val);
+    TSL_ASSERT_ARG(NULL != item_id);
+    TSL_ASSERT_ARG('\0' != *item_id);
+
+    if (FAILED(ret = config_get(cfg, &atm, item_id))) {
+        goto done;
+    }
+
+    if (CONFIG_ATOM_FLOAT != atm.atom_type) {
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+    *val = atm.atom_float;
 
 done:
     return ret;
