@@ -216,9 +216,10 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
                     a_re =  dthr->fm_samp_out_buf[2 *  i         ],
                     a_im =  dthr->fm_samp_out_buf[2 *  i      + 1];
 
-            int32_t s_re = a_re * b_re - a_im * b_im,
-                    s_im = a_im * b_re + a_re * b_im;
+            int32_t s_re = a_re * b_re + a_im * b_im,
+                    s_im = a_im * b_re - a_re * b_im;
 
+            /* Calculate the instantaneous phase difference */
             double sample = atan2((double)s_im, (double)s_re);
 
             dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)(sample/3.14159 * (double)(1ll << 15));
