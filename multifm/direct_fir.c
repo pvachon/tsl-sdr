@@ -11,6 +11,8 @@
 #include <math.h>
 #endif
 
+#define Q_31_SHIFT          30
+
 #define _DIRECT_FIR_IMPLEMENTATION
 
 aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, int32_t *fir_real_coeff,
@@ -197,8 +199,8 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
 
     fir->nr_samples -= fir->decimate_factor;
 
-    *psample_real = acc_re >> 31;
-    *psample_imag = acc_im >> 31;
+    *psample_real = acc_re >> Q_31_SHIFT;
+    *psample_imag = acc_im >> Q_31_SHIFT;
 
 done:
     return ret;

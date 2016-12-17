@@ -28,6 +28,7 @@
 
 #define RTL_SDR_DEFAULT_NR_SAMPLES      (16 * 32 * 512/2)
 #define LPF_PCM_OUTPUT_LEN              1024
+#define Q_31_SHIFT                      30
 
 /**
  * Sample data type
@@ -371,8 +372,8 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t 
 
     for (size_t i = 0; i < lpf_nr_taps; i++) {
         /* Calculate the new tap coefficient */
-        double complex lpf_tap = cexp(CMPLX(0, f_offs * (double)i)) * lpf_taps[i];
-        double q31 = 1ll << 31;
+        const double complex lpf_tap = cexp(CMPLX(0, f_offs * (double)i)) * lpf_taps[i];
+        const double q31 = 1ll << Q_31_SHIFT;
 #ifdef _DUMP_LPF
         double ptemp = 0;
         int64_t samp_power = 0;
