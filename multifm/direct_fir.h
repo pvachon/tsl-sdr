@@ -48,6 +48,31 @@ struct direct_fir {
     struct sample_buf *sb_next;
 
     /**
+     * The real part of the Q.31 rotation phase increment
+     */
+    int32_t rot_phase_incr_re;
+
+    /**
+     * The imaginary part of the Q.31 rotaiton phase increment
+     */
+    int32_t rot_phase_incr_im;
+
+    /**
+     * The real part of the Q.31 rotation factor to be applied to each sample
+     */
+    int32_t rot_phase_re;
+
+    /**
+     * The imaginary part of the Q.31 rotation factor to be applied to each sample
+     */
+    int32_t rot_phase_im;
+
+    /**
+     * The rotation counter.
+     */
+    unsigned rot_counter;
+
+    /**
      * The thread state that this FIR is attached to
      */
     struct demod_thread *dthr;
@@ -62,11 +87,18 @@ struct direct_fir {
  * \param fir_imag_coeff The imaginary coefficients for the FIR
  * \param decimation_factor The decimation factor to apply
  * \param dthr The demodulator thread that has the sample buffer allocator handle.
+ * \param derotate Set to `true` if you wish to apply a derotator. Useful if the filter will
+ *                 shift a signal to baseband.
+ * \param sampling_rate The sampling rate. Used to manage the phase derotator. Ignored if not
+ *                      using the phase derotator.
+ * \param freq_shift If the filter will be downshifting another signal to baseband, how much
+ *                   is this shift by, in Hz. Ignored if not using the phase derotator.
  *
  * \return A_OK on success, an error code otherwise
  */
 aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, int32_t *fir_real_coeff,
-        int32_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr);
+        int32_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,
+        bool derotate, uint32_t sampling_rate, int32_t freq_shift);
 
 /**
  * Cleanup memory and release sample buffers for the FIR

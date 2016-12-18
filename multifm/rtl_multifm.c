@@ -189,6 +189,8 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
     TSL_ASSERT_ARG(NULL != dthr);
     TSL_ASSERT_ARG(NULL != sbuf);
 
+    DIAG("New Sample Buffer: %u samples.", sbuf->nr_samples);
+
     TSL_BUG_IF_FAILED(direct_fir_push_sample_buf(&dthr->fir, sbuf));
     TSL_BUG_IF_FAILED(direct_fir_can_process(&dthr->fir, &can_process, NULL));
 
@@ -399,7 +401,7 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t 
 #endif /* defined(_DUMP_LPF) */
 
     /* Create a Direct Type FIR implementation */
-    TSL_BUG_IF_FAILED(direct_fir_init(&thr->fir, lpf_nr_taps, coeffs, &coeffs[base], decimation, thr));
+    TSL_BUG_IF_FAILED(direct_fir_init(&thr->fir, lpf_nr_taps, coeffs, &coeffs[base], decimation, thr, true, sample_rate, offset_hz));
 
 done:
     if (NULL != coeffs) {
@@ -624,7 +626,7 @@ aresult_t __rtl_sdr_worker_set_gain(struct rtlsdr_dev *dev, int gain)
 
     real_gain = gain_n[0];
     for (int i = 1; i < nr_gains; i++) {
-        if (real_gain > gain) {
+        if (real_gain >= gain) {
             break;
         }
         real_gain = gain_n[i];

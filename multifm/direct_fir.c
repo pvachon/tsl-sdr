@@ -7,16 +7,16 @@
 #include <tsl/safe_alloc.h>
 
 #include <string.h>
-#if 0
 #include <math.h>
-#endif
+#include <complex.h>
 
 #define Q_31_SHIFT          30
 
 #define _DIRECT_FIR_IMPLEMENTATION
 
 aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, int32_t *fir_real_coeff,
-        int32_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr)
+        int32_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,
+        bool derotate, uint32_t sampling_rate, int32_t freq_shift)
 {
     aresult_t ret = A_OK;
 
@@ -26,6 +26,9 @@ aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, int32_t *fir
     TSL_ASSERT_ARG(NULL != fir_imag_coeff);
     TSL_ASSERT_ARG(0 != decimation_factor);
     TSL_ASSERT_ARG(NULL != dthr);
+
+    DIAG("FIR: Preparing %zu coefficients, decimation by %u, with%s derotation, sampling rate = %u frequency_shift = %d",
+            nr_coeffs, decimation_factor, true == derotate ? "" : "out", sampling_rate, freq_shift);
 
     memset(fir, 0, sizeof(struct direct_fir));
 
@@ -37,6 +40,21 @@ aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, int32_t *fir
     fir->decimate_factor = decimation_factor;
     fir->dthr = dthr;
     fir->nr_coeffs = nr_coeffs;
+
+    fir->rot_phase_re = 0;
+    fir->rot_phase_im = 0;
+
+    if (true == derotate) {
+        double fwt0 = 2.0 * M_PI * (double)freq_shift / (double)sampling_rate,
+               q31 = 1ll << Q_31_SHIFT;
+        complex double derotate_incr = cexp(CMPLX(0, -fwt0 * (double)decimation_factor));
+        fir->rot_phase_incr_re = (int32_t)(creal(derotate_incr) * q31 + 0.5);
+        fir->rot_phase_incr_im = (int32_t)(cimag(derotate_incr) * q31 + 0.5);
+        fir->rot_phase_re = 1ul << Q_31_SHIFT;
+        fir->rot_phase_im = 0;
+        DIAG("Derotation factor: %f, %f (%08x, %08x)", creal(derotate_incr), cimag(derotate_incr), fir->rot_phase_incr_re, fir->rot_phase_incr_im);
+    }
+
 
     return ret;
 }
@@ -161,8 +179,8 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
             s_total += s_mag;
 #endif
 
-            int64_t s_re = ((int64_t)raw_samp_re) << 23,
-                    s_im = ((int64_t)raw_samp_im) << 23,
+            int64_t s_re = ((int64_t)raw_samp_re) << 22,
+                    s_im = ((int64_t)raw_samp_im) << 22,
                     c_re = fir->fir_real_coeff[i + start_coeff],
                     c_im = fir->fir_imag_coeff[i + start_coeff],
                     f_re = 0,
@@ -199,6 +217,28 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
 
     fir->nr_samples -= fir->decimate_factor;
 
+    if (0 != fir->rot_phase_incr_re && 0 != fir->rot_phase_incr_im) {
+        /* Convert the accumulated sample to Q.31 */
+        acc_re >>= Q_31_SHIFT;
+        acc_im >>= Q_31_SHIFT;
+
+        /* Apply the phase derotation */
+        int64_t z_re = acc_re * (int64_t)fir->rot_phase_re - acc_im * (int64_t)fir->rot_phase_im,
+                z_im = acc_re * (int64_t)fir->rot_phase_im + acc_im * (int64_t)fir->rot_phase_re;
+
+        acc_re = z_re;
+        acc_im = z_im;
+
+        int64_t ph_re = (int64_t)fir->rot_phase_re * (int64_t)fir->rot_phase_incr_re - (int64_t)fir->rot_phase_im * (int64_t)fir->rot_phase_incr_im,
+                ph_im = (int64_t)fir->rot_phase_im * (int64_t)fir->rot_phase_incr_re + (int64_t)fir->rot_phase_re * (int64_t)fir->rot_phase_incr_im;
+
+        fir->rot_phase_re = ph_re >> Q_31_SHIFT;
+        fir->rot_phase_im = ph_im >> Q_31_SHIFT;
+
+        fir->rot_counter++;
+    }
+
+    /* Return the computed sample, in Q.31 (currently in Q.62 due to the prior multiplications) */
     *psample_real = acc_re >> Q_31_SHIFT;
     *psample_imag = acc_im >> Q_31_SHIFT;
 
