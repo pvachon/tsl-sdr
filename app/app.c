@@ -57,7 +57,7 @@ void buserr_handler(int signal, siginfo_t *info, void *context)
     size_t len = 0;
     len = backtrace(symbols, BL_ARRAY_ENTRIES(symbols));
     printf("\nbus error - backtracing %zu frames.\n", len);
-    printf("Faulting address: 0x%lx cause: ", (intptr_t)info->si_addr);
+    printf("Faulting address: %p cause: ", (void *)info->si_addr);
     switch (info->si_code) {
     case BUS_ADRALN:
         printf("incorrect memory alignment\n");
@@ -88,7 +88,7 @@ void segv_handler(int signal, siginfo_t *info, void *context)
     size_t len = 0;
     len = backtrace(symbols, BL_ARRAY_ENTRIES(symbols));
     printf("\nsegmentation fault - backtracing %zu frames.\n", len);
-    printf("Faulting address: 0x%lx cause: ", (intptr_t)info->si_addr);
+    printf("Faulting address: %p cause: ", (void *)info->si_addr);
     printf("%s (%d)\n",
             info->si_code == SEGV_MAPERR ? "Map Error" :
             info->si_code == SEGV_ACCERR ? "Access Permissions Error" :
@@ -358,7 +358,7 @@ aresult_t app_allocator_init(struct config *cfg)
     char *a_nr_huge_pages = NULL;
     int nr_pages = 0;
     int nr_huge_pages = 0;
-    uint64_t huge_page_size = 2 * 1024 * 1024;
+    size_t huge_page_size = 2 * 1024 * 1024;
     long page_size = sysconf(_SC_PAGESIZE);
 
     if (slab_manager_initialized) {

@@ -770,11 +770,11 @@ done:
 }
 
 static
-aresult_t _config_parse_memory_size(const char *str, char **end, uint64_t *val)
+aresult_t _config_parse_memory_size(const char *str, char **end, size_t *val)
 {
     aresult_t ret = A_OK;
     char *endptr = NULL;
-    uint64_t memval = 0;
+    size_t memval = 0;
 
     TSL_ASSERT_ARG_DEBUG(NULL != str);
     TSL_ASSERT_ARG_DEBUG(NULL != end);
@@ -814,7 +814,7 @@ aresult_t _config_parse_memory_size(const char *str, char **end, uint64_t *val)
     return ret;
 }
 
-aresult_t config_get_byte_size(struct config *cfg, uint64_t *val, const char *item_id)
+aresult_t config_get_byte_size(struct config *cfg, size_t *val, const char *item_id)
 {
     aresult_t ret = A_OK;
     struct config atm;

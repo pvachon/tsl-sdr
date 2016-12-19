@@ -168,7 +168,7 @@ aresult_t config_get_sockaddr(struct config *cfg, struct sockaddr *saddr, size_t
  *
  * \return A_OK on success, an error code otherwise
  */
-aresult_t config_get_byte_size(struct config *cfg, uint64_t *val, const char *item_id);
+aresult_t config_get_byte_size(struct config *cfg, size_t *val, const char *item_id);
 
 /**
  * For the key item_id, treat the value as a time indicator. This can either be a string with

@@ -14,7 +14,7 @@
 
 #include <stddef.h>
 
-#define __SAFE_IS_UL(_v) __builtin_types_compatible_p(__typeof__(_v), unsigned long)
+#define __SAFE_IS_UL(_v) __builtin_types_compatible_p(__typeof__(_v), size_t)
 #define __SAFE_FAIL(_v) __builtin_choose_expr(__SAFE_IS_UL(_v), A_OK, PANIC("Attempt to alloc without a size_t!"))
 #define __SAFE_FAIL2(_v1, _v2) __builtin_choose_expr(__SAFE_IS_UL(_v1) && __SAFE_IS_UL(_v2), A_OK, PANIC("Attempt to alloc without a size_t"))
 
@@ -31,7 +31,7 @@
 /**
  * A somewhat sanity-checked realloc(3)
  */
-#define TREALLOC(_ptr, _sz) __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(_sz), unsigned long), __safe_realloc((_ptr), (_sz)), __SAFE_FAIL(_sz))
+#define TREALLOC(_ptr, _sz) __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(_sz), size_t), __safe_realloc((_ptr), (_sz)), __SAFE_FAIL(_sz))
 
 /**
  * calloc(3)-style callable, with alignment
@@ -41,7 +41,7 @@
 /**
  * Macro to help with allocating a single structure
  */
-#define TZALLOC(_ptr) TCALLOC((void **)&(_ptr), 1ul, sizeof( *(_ptr) ))
+#define TZALLOC(_ptr) TCALLOC((void **)&(_ptr), (size_t)1, sizeof( *(_ptr) ))
 
 /**
  * Macro to help with allocating a single structure, with alignment

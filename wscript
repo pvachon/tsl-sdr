@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 
 from waflib import Logs
@@ -19,15 +20,26 @@ top = '.'
 out = 'build'
 
 versionCommand = 'git describe --abbrev=16 --dirty --always --tags'.split(' ')
+cpuArchCommand = '/bin/uname -m'.split(' ')
+
+# FIXME: get rid of this crap
+cpuArch = subprocess.check_output(cpuArchCommand).strip()
+
+def _checkSupportedArch(cpuArchId):
+	if cpuArchId != 'x86_64' and cpuArchId != 'armv7l':
+		raise Exception('Unsupported CPU architecture: {}'.format(cpuArchId))
 
 ########## Commands ##########
 
 def _loadTools(context):
+	_checkSupportedArch(cpuArch)
+
 	#Force gcc (instead of generic C) since Phil tortures the compiler
 	context.load('gcc')
 
 	# Nasm/Yasm
-	context.load('nasm')
+	if cpuArch == 'x86_64':
+		context.load('nasm')
 
 	#This does neat stuff, like header dependencies
 	context.load('c_preproc')
@@ -112,6 +124,8 @@ def configure(conf):
 	# XXX Needs to be made arch-specific
 	conf.env.ASFLAGS += ['-f', 'elf64']
 
+	conf.msg('Building for:', cpuArch)
+
 	#Setup the environment: debug or release
 	if conf.options.debug:
 		stars = '*' * 20
@@ -155,7 +169,7 @@ def configure(conf):
 		'CONFIG_DIRECTORY_DEFAULT=\"/etc/tsl\"',
 	]
 
-	conf.check_cfg(package = 'fftw3f', atleast_version = '3.0.0', args = '--cflags --libs')
+	# conf.check_cfg(package = 'fftw3f', atleast_version = '3.0.0', args = '--cflags --libs')
 
 def _preBuild(bld):
 	Logs.info('Pre %s...' % bld.cmd)
@@ -211,8 +225,12 @@ def build(bld):
 	)
 
 	#app
+	appExcl = []
+	if cpuArch == 'armv7l':
+		# We want to ignore coro
+		appExcl.append('app/cpufeatures.*')
 	bld.stlib(
-		source   = bld.path.ant_glob('app/*.c'),
+		source   = bld.path.ant_glob('app/*.c', excl=appExcl),
 		use      = ['config', 'tsl'],
 		target   = os.path.join(libPath, 'app'),
 		name     = 'app',
@@ -256,10 +274,12 @@ def build(bld):
 		name     = 'tsl_version',
 	)
 	#Then the regular build happens
-	tslSource = bld.path.ant_glob('tsl/**/*.[cS]', excl=[
-		'tsl/version.c',
-		'tsl/test/*.*'
-	])
+	excl=['tsl/version.c', 'tsl/test/*.*']
+	if cpuArch == 'armv7l':
+		# We want to ignore coro
+		excl.append('tsl/coro/*.*')
+
+	tslSource = bld.path.ant_glob('tsl/**/*.[cS]', excl=excl)
 	bld.stlib(
 		cflags   = ['-fPIC'],
 		source   = tslSource,

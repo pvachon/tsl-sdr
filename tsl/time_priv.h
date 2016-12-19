@@ -50,11 +50,7 @@ uint64_t _tsl_clock_freq;
  */
 uint64_t tsl_get_clock_monotonic(void)
 {
-    uint64_t cur_ticks = __tsl_get_cpu_timer() - _tsl_proc_clock_offset;
-    /* Calculate the number of ticks since the process started */
-    uint64_t sec = cur_ticks/_tsl_clock_freq;
-    uint64_t nsec = ((cur_ticks % _tsl_clock_freq) * 1000000000ull)/_tsl_clock_freq;
-    return sec * 1000000000ull + nsec;
+    return time_get_time();
 }
 #endif
 
