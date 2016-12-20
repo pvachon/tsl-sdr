@@ -12,19 +12,19 @@
     },
     {
       "outFifo" : "/home/pvachon/ch3.out",
-      "chanCenterFreq" : 929362500
+      "chanCenterFreq" : 929362000
     },
     {
       "outFifo" : "/home/pvachon/ch2.out",
-      "chanCenterFreq" : 929662500
+      "chanCenterFreq" : 929662000
     },
     {
       "outFifo" : "/home/pvachon/ch1.out",
-      "chanCenterFreq" : 929637500
+      "chanCenterFreq" : 929638000
     },
     {
       "outFifo" : "/home/pvachon/ch0.out",
-      "chanCenterFreq" : 929612500
+      "chanCenterFreq" : 929612000
     }
   ]
 }
