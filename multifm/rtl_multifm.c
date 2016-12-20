@@ -28,7 +28,8 @@
 
 #define RTL_SDR_DEFAULT_NR_SAMPLES      (16 * 32 * 512/2)
 #define LPF_PCM_OUTPUT_LEN              1024
-#define Q_31_SHIFT                      30
+//#define Q_31_SHIFT                      30
+#define Q_15_SHIFT                      14
 
 /**
  * Sample data type
@@ -145,17 +146,17 @@ struct demod_thread {
     /**
      * Number of FM signal samples available
      */
-    uint32_t nr_fm_samples;
+    size_t nr_fm_samples;
 
     /**
      * FM samples to be processed
      */
-    int32_t fm_samp_out_buf[2 * LPF_PCM_OUTPUT_LEN];
+    int16_t fm_samp_out_buf[2 * LPF_PCM_OUTPUT_LEN];
 
     /**
      * Number of good PCM samples
      */
-    uint32_t nr_pcm_samples;
+    size_t nr_pcm_samples;
 
     /**
      * Output PCM buffer
@@ -205,6 +206,8 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         TSL_BUG_IF_FAILED(direct_fir_process(&dthr->fir, dthr->fm_samp_out_buf + dthr->nr_fm_samples,
                     LPF_PCM_OUTPUT_LEN - dthr->nr_fm_samples, &nr_samples));
 
+        DIAG("FIR Output Samples: %zu - %zu initially", nr_samples, dthr->nr_fm_samples);
+
         dthr->nr_fm_samples += nr_samples;
         dthr->total_nr_fm_samples += nr_samples;
 
@@ -214,18 +217,20 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
 
         for (size_t i = 0; i < dthr->nr_fm_samples; i++) {
             TSL_BUG_ON(LPF_PCM_OUTPUT_LEN <= dthr->nr_pcm_samples);
-            int64_t b_re =  dthr->last_fm_re,
+            /* Get the complex conjugate of the prior sample - calculate the instantaneous phase difference between the two. */
+            int32_t b_re =  dthr->last_fm_re,
                     b_im = -dthr->last_fm_im,
-                    a_re =  dthr->fm_samp_out_buf[2 *  i         ],
-                    a_im =  dthr->fm_samp_out_buf[2 *  i      + 1];
+                    a_re =  dthr->fm_samp_out_buf[2 * i    ],
+                    a_im =  dthr->fm_samp_out_buf[2 * i + 1];
 
-            int64_t s_re = a_re * b_re - a_im * b_im,
+            int32_t s_re = a_re * b_re - a_im * b_im,
                     s_im = a_im * b_re + a_re * b_im;
 
-            /* Calculate the instantaneous phase difference */
-            double sample = atan2((double)(s_im >> Q_31_SHIFT), (double)(s_re >> Q_31_SHIFT));
+            /* XXX: todo: this needs to be made full-integer
+             * Calculate the instantaneous phase difference */
+            double sample = atan2((double)(s_im >> Q_15_SHIFT), (double)(s_re >> Q_15_SHIFT));
+            dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)(sample/M_PI * (double)(1ul << Q_15_SHIFT));
 
-            dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)(sample/M_PI * (double)(1ll << 15));
             dthr->nr_pcm_samples++;
 
             /* Store the last sample processed */
@@ -233,22 +238,17 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
             dthr->last_fm_im = a_im;
         }
 
-        // XXX HACK
-        DIAG("Writing %u samples (%zu bytes)", dthr->nr_pcm_samples, sizeof(int16_t) * dthr->nr_pcm_samples);
+        /* x. Write out the resulting PCM samples */
         if (0 > write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(int16_t))) {
             int errnum = errno;
             PANIC("Failed to write %zu bytes to the output fifo. Reason: %s (%d)", sizeof(int16_t) * dthr->nr_pcm_samples,
                     strerror(errnum), errnum);
         }
 
+        TSL_BUG_IF_FAILED(direct_fir_can_process(&dthr->fir, &can_process, NULL));
+
         /* We're done with this batch of samples, woohoo */
         dthr->nr_fm_samples = 0;
-
-        /* 3. Stretch goal: resample 25kHz to 22,050kHz */
-
-        /* 4. Super Stretch Goal: integrate FLEX demod into this */
-
-        TSL_BUG_IF_FAILED(direct_fir_can_process(&dthr->fir, &can_process, NULL));
     }
 
     /* Force the thread to wait until a new buffer is available */
@@ -346,7 +346,7 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t 
 {
     aresult_t ret = A_OK;
 
-    int32_t *coeffs = NULL;
+    int16_t *coeffs = NULL;
     double f_offs = -2.0 * M_PI * (double)offset_hz / (double)sample_rate;
 #ifdef _DUMP_LPF
     int64_t power = 0;
@@ -360,7 +360,7 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t 
     TSL_ASSERT_ARG(NULL != lpf_taps);
     TSL_ASSERT_ARG(0 != lpf_nr_taps);
 
-    if (FAILED(ret = TACALLOC((void *)&coeffs, lpf_nr_taps, sizeof(int32_t) * 2, SYS_CACHE_LINE_LENGTH))) {
+    if (FAILED(ret = TACALLOC((void *)&coeffs, lpf_nr_taps, sizeof(int16_t) * 2, SYS_CACHE_LINE_LENGTH))) {
         MFM_MSG(SEV_FATAL, "NO-MEM", "Out of memory for FIR.");
         goto done;
     }
@@ -372,15 +372,15 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t 
     for (size_t i = 0; i < lpf_nr_taps; i++) {
         /* Calculate the new tap coefficient */
         const double complex lpf_tap = cexp(CMPLX(0, f_offs * (double)i)) * lpf_taps[i];
-        const double q31 = 1ll << Q_31_SHIFT;
+        const double q15 = 1ll << Q_15_SHIFT;
 #ifdef _DUMP_LPF
         double ptemp = 0;
         int64_t samp_power = 0;
 #endif
 
         /* Calculate the Q31 coefficient */
-        coeffs[       i] = (int32_t)(creal(lpf_tap) * q31 + 0.5);
-        coeffs[base + i] = (int32_t)(cimag(lpf_tap) * q31 + 0.5);
+        coeffs[       i] = (int16_t)(creal(lpf_tap) * q15 + 0.5);
+        coeffs[base + i] = (int16_t)(cimag(lpf_tap) * q15 + 0.5);
 
 #ifdef _DUMP_LPF
         ptemp = sqrt( (creal(lpf_tap) * creal(lpf_tap)) + (cimag(lpf_tap) * cimag(lpf_tap)) );

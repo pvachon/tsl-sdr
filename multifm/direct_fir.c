@@ -10,12 +10,13 @@
 #include <math.h>
 #include <complex.h>
 
-#define Q_31_SHIFT          30
+//#define Q_15_SHIFT          30
+#define Q_15_SHIFT          14
 
 #define _DIRECT_FIR_IMPLEMENTATION
 
-aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, int32_t *fir_real_coeff,
-        int32_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,
+aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_t *fir_real_coeff,
+        const int16_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,
         bool derotate, uint32_t sampling_rate, int32_t freq_shift)
 {
     aresult_t ret = A_OK;
@@ -32,10 +33,10 @@ aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, int32_t *fir
 
     memset(fir, 0, sizeof(struct direct_fir));
 
-    TSL_BUG_IF_FAILED(TACALLOC((void **)&fir->fir_real_coeff, nr_coeffs, sizeof(int32_t), 16));
-    memcpy(fir->fir_real_coeff, fir_real_coeff, nr_coeffs * sizeof(int32_t));
-    TSL_BUG_IF_FAILED(TACALLOC((void **)&fir->fir_imag_coeff, nr_coeffs, sizeof(int32_t), 16));
-    memcpy(fir->fir_imag_coeff, fir_imag_coeff, nr_coeffs * sizeof(int32_t));
+    TSL_BUG_IF_FAILED(TACALLOC((void **)&fir->fir_real_coeff, nr_coeffs, sizeof(int16_t), 16));
+    memcpy(fir->fir_real_coeff, fir_real_coeff, nr_coeffs * sizeof(int16_t));
+    TSL_BUG_IF_FAILED(TACALLOC((void **)&fir->fir_imag_coeff, nr_coeffs, sizeof(int16_t), 16));
+    memcpy(fir->fir_imag_coeff, fir_imag_coeff, nr_coeffs * sizeof(int16_t));
 
     fir->decimate_factor = decimation_factor;
     fir->dthr = dthr;
@@ -46,11 +47,11 @@ aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, int32_t *fir
 
     if (true == derotate) {
         double fwt0 = 2.0 * M_PI * (double)freq_shift / (double)sampling_rate,
-               q31 = 1ll << Q_31_SHIFT;
+               q15 = 1ll << Q_15_SHIFT;
         complex double derotate_incr = cexp(CMPLX(0, -fwt0 * (double)decimation_factor));
-        fir->rot_phase_incr_re = (int32_t)(creal(derotate_incr) * q31 + 0.5);
-        fir->rot_phase_incr_im = (int32_t)(cimag(derotate_incr) * q31 + 0.5);
-        fir->rot_phase_re = 1ul << Q_31_SHIFT;
+        fir->rot_phase_incr_re = (int32_t)(creal(derotate_incr) * q15 + 0.5);
+        fir->rot_phase_incr_im = (int32_t)(cimag(derotate_incr) * q15 + 0.5);
+        fir->rot_phase_re = 1ul << Q_15_SHIFT;
         fir->rot_phase_im = 0;
         DIAG("Derotation factor: %f, %f (%08x, %08x)", creal(derotate_incr), cimag(derotate_incr), fir->rot_phase_incr_re, fir->rot_phase_incr_im);
     }
@@ -113,20 +114,15 @@ done:
 
 #ifdef _DIRECT_FIR_IMPLEMENTATION
 static
-aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_real, int32_t *psample_imag)
+aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_real, int16_t *psample_imag)
 {
     aresult_t ret = A_OK;
 
-    int64_t acc_re = 0,
+    int32_t acc_re = 0,
             acc_im = 0;
     size_t coeffs_remain = 0,
            buf_offset = 0;
     struct sample_buf *cur_buf = NULL;
-#if 0
-    int16_t s_min = INT16_MAX,
-            s_max = INT16_MIN;
-    double s_total = 0.0;
-#endif
 
     TSL_ASSERT_ARG_DEBUG(NULL != fir);
     TSL_ASSERT_ARG_DEBUG(NULL != psample_real);
@@ -155,32 +151,17 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
          */
         nr_samples_in = BL_MIN2(nr_samples_in, coeffs_remain);
 
-#if 0
-        /* DEBUG: dump the current buffer state */
-        if (nr_samples_in != fir->nr_coeffs) {
-            DIAG("Samples in: %zu Buffer Base: %zu Start Coeff: %zu", nr_samples_in, buf_offset, start_coeff);
-        }
-#endif
-
         for (size_t i = 0; i < nr_samples_in; i++) {
             TSL_BUG_ON(i + start_coeff >= fir->nr_coeffs);
             TSL_BUG_ON(i + buf_offset >= cur_buf->nr_samples);
 
             int16_t *sample = &((int16_t *)cur_buf->data_buf)[2 * (buf_offset + i)];
 
-            int16_t raw_samp_re = sample[0],
+            int32_t raw_samp_re = sample[0],
                     raw_samp_im = sample[1];
 
-#if 0
-            double s_mag = sqrt((double)raw_samp_re * (double)raw_samp_re + (double)raw_samp_im * (double)raw_samp_im);
-
-            s_min = BL_MIN2(s_min, (int16_t)s_mag);
-            s_max = BL_MAX2(s_max, (int16_t)s_mag);
-            s_total += s_mag;
-#endif
-
-            int64_t s_re = ((int64_t)raw_samp_re) << 22,
-                    s_im = ((int64_t)raw_samp_im) << 22,
+            int32_t s_re = raw_samp_re << 7,
+                    s_im = raw_samp_im << 7,
                     c_re = fir->fir_real_coeff[i + start_coeff],
                     c_im = fir->fir_imag_coeff[i + start_coeff],
                     f_re = 0,
@@ -201,11 +182,6 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
         coeffs_remain -= nr_samples_in;
     } while (coeffs_remain != 0);
 
-#if 0
-    printf("S Stats: min: %d max: %d mean: %f o: (%zd, %zd) ~ (%f, %f)\n", (int)s_min, (int)s_max, s_total/fir->nr_coeffs,
-          acc_re >> 54, acc_im >> 54, (double)acc_re/(double)(1ll << 54), (double)acc_im/(double)(1ll << 54));
-#endif
-
     /* Check if the next sample will start in the following buffer; if so, move along */
     if (fir->sample_offset + fir->decimate_factor > fir->sb_active->nr_samples) {
         fir->sb_active = fir->sb_next;
@@ -217,37 +193,38 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int32_t *psample_re
 
     fir->nr_samples -= fir->decimate_factor;
 
+    /* Apply a phase rotation, if appropriate */
     if (0 != fir->rot_phase_incr_re && 0 != fir->rot_phase_incr_im) {
-        /* Convert the accumulated sample to Q.31 */
-        acc_re >>= Q_31_SHIFT;
-        acc_im >>= Q_31_SHIFT;
+        /* Convert the accumulated sample to Q.15 */
+        acc_re >>= Q_15_SHIFT;
+        acc_im >>= Q_15_SHIFT;
 
         /* Apply the phase derotation */
-        int64_t z_re = acc_re * (int64_t)fir->rot_phase_re - acc_im * (int64_t)fir->rot_phase_im,
-                z_im = acc_re * (int64_t)fir->rot_phase_im + acc_im * (int64_t)fir->rot_phase_re;
+        int32_t z_re = acc_re * fir->rot_phase_re - acc_im * fir->rot_phase_im,
+                z_im = acc_re * fir->rot_phase_im + acc_im * fir->rot_phase_re;
 
         acc_re = z_re;
         acc_im = z_im;
 
-        int64_t ph_re = (int64_t)fir->rot_phase_re * (int64_t)fir->rot_phase_incr_re - (int64_t)fir->rot_phase_im * (int64_t)fir->rot_phase_incr_im,
-                ph_im = (int64_t)fir->rot_phase_im * (int64_t)fir->rot_phase_incr_re + (int64_t)fir->rot_phase_re * (int64_t)fir->rot_phase_incr_im;
+        int32_t ph_re = fir->rot_phase_re * fir->rot_phase_incr_re - fir->rot_phase_im * fir->rot_phase_incr_im,
+                ph_im = fir->rot_phase_im * fir->rot_phase_incr_re + fir->rot_phase_re * fir->rot_phase_incr_im;
 
-        fir->rot_phase_re = ph_re >> Q_31_SHIFT;
-        fir->rot_phase_im = ph_im >> Q_31_SHIFT;
+        fir->rot_phase_re = ph_re >> Q_15_SHIFT;
+        fir->rot_phase_im = ph_im >> Q_15_SHIFT;
 
         fir->rot_counter++;
     }
 
     /* Return the computed sample, in Q.31 (currently in Q.62 due to the prior multiplications) */
-    *psample_real = acc_re >> Q_31_SHIFT;
-    *psample_imag = acc_im >> Q_31_SHIFT;
+    *psample_real = acc_re >> Q_15_SHIFT;
+    *psample_imag = acc_im >> Q_15_SHIFT;
 
 done:
     return ret;
 }
 #endif
 
-aresult_t direct_fir_process(struct direct_fir *fir, int32_t *out_buf, size_t nr_out_samples,
+aresult_t direct_fir_process(struct direct_fir *fir, int16_t *out_buf, size_t nr_out_samples,
         size_t *nr_out_samples_generated)
 {
     aresult_t ret = A_OK;

@@ -10,12 +10,12 @@ struct direct_fir {
     /**
      * Real coefficients. Must be aligned to int32_t's natural alignment.
      */
-    int32_t *fir_real_coeff;
+    int16_t *fir_real_coeff;
 
     /**
      * Imaginary coefficients. Must be aligned to int32_t's natural alignment.
      */
-    int32_t *fir_imag_coeff;
+    int16_t *fir_imag_coeff;
 
     /**
      * The number of coefficients in this FIR
@@ -48,22 +48,22 @@ struct direct_fir {
     struct sample_buf *sb_next;
 
     /**
-     * The real part of the Q.31 rotation phase increment
+     * The real part of the Q.15 rotation phase increment
      */
     int32_t rot_phase_incr_re;
 
     /**
-     * The imaginary part of the Q.31 rotaiton phase increment
+     * The imaginary part of the Q.15 rotaiton phase increment
      */
     int32_t rot_phase_incr_im;
 
     /**
-     * The real part of the Q.31 rotation factor to be applied to each sample
+     * The real part of the Q.15 rotation factor to be applied to each sample
      */
     int32_t rot_phase_re;
 
     /**
-     * The imaginary part of the Q.31 rotation factor to be applied to each sample
+     * The imaginary part of the Q.15 rotation factor to be applied to each sample
      */
     int32_t rot_phase_im;
 
@@ -79,7 +79,7 @@ struct direct_fir {
 };
 
 /**
- * Create a direct coefficient FIR, in Q32. This function allocates memory.
+ * Create a direct coefficient FIR, in Q.15. This function allocates memory.
  *
  * \param fir The FIR object. Pass a chunk of memory by reference.
  * \param nr_coeffs The number of coefficients in the FIR
@@ -96,8 +96,8 @@ struct direct_fir {
  *
  * \return A_OK on success, an error code otherwise
  */
-aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, int32_t *fir_real_coeff,
-        int32_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,
+aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_t *fir_real_coeff,
+        const int16_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,
         bool derotate, uint32_t sampling_rate, int32_t freq_shift);
 
 /**
@@ -131,7 +131,7 @@ aresult_t direct_fir_push_sample_buf(struct direct_fir *fir, struct sample_buf *
  *
  * \return A_OK on success, an error code otherwise
  */
-aresult_t direct_fir_process(struct direct_fir *fir, int32_t *out_buf, size_t nr_out_samples,
+aresult_t direct_fir_process(struct direct_fir *fir, int16_t *out_buf, size_t nr_out_samples,
         size_t *nr_output_samples_generated);
 
 /**
