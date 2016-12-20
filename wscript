@@ -135,14 +135,25 @@ def configure(conf):
 			'-O0',
 		]
 	else:
+		tuning = []
+		if cpuArch == 'armv7l':
+			tuning = [
+				'-mcpu=cortex-a53',
+				'-mfpu=crypto-neon-fp-armv8',
+				'-mfloat-abi=hard',
+			]
+		else:
+			tuning = [
+				'-march=native',
+				'-mtune=native',
+			]
+
 		stars = '$' * 20
 		conf.msg('Build environment', '%s RELEASE %s' % (stars, stars), color='BOLD')
 		conf.env.ENVIRONMENT = 'release'
 		conf.env.CFLAGS += [
 			'-O2',
-			'-march=native',
-			'-mtune=native',
-		]
+		] + tuning
 
 	if conf.options.debug or conf.options.tsl_debug:
 		conf.msg('Defining', '_TSL_DEBUG', color='CYAN')
@@ -274,10 +285,13 @@ def build(bld):
 		name     = 'tsl_version',
 	)
 	#Then the regular build happens
+
+	# Calculate what we might want to exclude for certain architectures
 	excl=['tsl/version.c', 'tsl/test/*.*']
 	if cpuArch == 'armv7l':
 		# We want to ignore coro
 		excl.append('tsl/coro/*.*')
+		excl.append('tsl/timers.*')
 
 	tslSource = bld.path.ant_glob('tsl/**/*.[cS]', excl=excl)
 	bld.stlib(
@@ -287,8 +301,14 @@ def build(bld):
 		target   = os.path.join(libPath, 'tsl'),
 		name     = 'tsl',
 	)
+
+	# Exclude the coroutine tests if we're building for ARM32
+	excl=[]
+	if cpuArch == 'armv7l':
+		excl.append('tsl/test/test_coro.c')
+		excl.append('tsl/test/test_speed.c')
 	bld.program(
-		source   = bld.path.ant_glob('tsl/test/*.c'),
+		source   = bld.path.ant_glob('tsl/test/*.c', excl=excl),
 		use      = ['tsl'],
 		target   = os.path.join(testPath, 'test_tsl'),
 		name     = 'tsl_test',

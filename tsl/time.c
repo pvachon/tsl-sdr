@@ -218,6 +218,7 @@ aresult_t tsl_time_init(void)
 {
     aresult_t ret = A_OK;
 
+#ifdef _x86_64__
     _tsl_proc_clock_offset = __tsl_get_cpu_timer();
 
     if (tsl_calc_clockfreq(&_tsl_clock_freq)) {
@@ -227,7 +228,6 @@ aresult_t tsl_time_init(void)
     DIAG("CPU Core Clock: %f MHz", (float)_tsl_clock_freq/1e6);
 
 
-#ifdef __x86_64__
     __uint128_t denom = ((__uint128_t)1) << 64;
     denom *= 1000000000ull;
     _tsl_clock_coeff = denom /(__uint128_t)_tsl_clock_freq;
