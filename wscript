@@ -291,7 +291,7 @@ def build(bld):
 	if cpuArch == 'armv7l':
 		# We want to ignore coro
 		excl.append('tsl/coro/*.*')
-		excl.append('tsl/timers.*')
+		excl.append('tsl/timer.c')
 
 	tslSource = bld.path.ant_glob('tsl/**/*.[cS]', excl=excl)
 	bld.stlib(

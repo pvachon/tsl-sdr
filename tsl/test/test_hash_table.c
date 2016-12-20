@@ -22,7 +22,7 @@ aresult_t _test_compare_ht_entry(struct hash_node *hnode, void *key, size_t key_
 
     entry = BL_CONTAINER_OF(hnode, struct test_ht_entry, h_node);
 
-    *result = (uint64_t)key == entry->id;
+    *result = (intptr_t)key == entry->id;
 
     return ret;
 }

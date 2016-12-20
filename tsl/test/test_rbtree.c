@@ -13,8 +13,8 @@
 static
 int test_rbtree_compare(void *lhs, void *rhs)
 {
-    int64_t n_lhs = (int64_t)lhs;
-    int64_t n_rhs = (int64_t)rhs;
+    intptr_t n_lhs = (intptr_t)lhs;
+    intptr_t n_rhs = (intptr_t)rhs;
 
     return (int)(n_lhs - n_rhs);
 }
@@ -23,7 +23,7 @@ int test_rbtree_compare(void *lhs, void *rhs)
 static
 void test_rbtree_print(struct rb_tree_node *node)
 {
-    int64_t val = (int64_t)(node->key);
+    intptr_t val = (intptr_t)(node->key);
     printf("%d", (int)val);
 }
 #endif
@@ -208,7 +208,7 @@ TEST_DECL(test_rbtree_lifecycle)
     memset(nodes, 0, sizeof(nodes));
 
     for (size_t i = 0; i < BL_ARRAY_ENTRIES(nodes); ++i) {
-        void *key = (void*)((int64_t)(i) + (i % 2 ? 42 : -42));
+        void *key = (void*)((intptr_t)(i) + (i % 2 ? 42 : -42));
         TEST_ASSERT_EQUALS(rb_tree_insert(&my_tree, key, &(nodes[i].node)), A_OK);
     }
 
