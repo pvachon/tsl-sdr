@@ -214,18 +214,18 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
 
         for (size_t i = 0; i < dthr->nr_fm_samples; i++) {
             TSL_BUG_ON(LPF_PCM_OUTPUT_LEN <= dthr->nr_pcm_samples);
-            int32_t b_re =  dthr->last_fm_re,
+            int64_t b_re =  dthr->last_fm_re,
                     b_im = -dthr->last_fm_im,
                     a_re =  dthr->fm_samp_out_buf[2 *  i         ],
                     a_im =  dthr->fm_samp_out_buf[2 *  i      + 1];
 
-            int32_t s_re = a_re * b_re + a_im * b_im,
-                    s_im = a_im * b_re - a_re * b_im;
+            int64_t s_re = a_re * b_re - a_im * b_im,
+                    s_im = a_im * b_re + a_re * b_im;
 
             /* Calculate the instantaneous phase difference */
-            double sample = atan2((double)s_im, (double)s_re);
+            double sample = atan2((double)(s_im >> Q_31_SHIFT), (double)(s_re >> Q_31_SHIFT));
 
-            dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)(sample/3.14159 * (double)(1ll << 15));
+            dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)(sample/M_PI * (double)(1ll << 15));
             dthr->nr_pcm_samples++;
 
             /* Store the last sample processed */
@@ -235,14 +235,11 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
 
         // XXX HACK
         DIAG("Writing %u samples (%zu bytes)", dthr->nr_pcm_samples, sizeof(int16_t) * dthr->nr_pcm_samples);
-#if 0
         if (0 > write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(int16_t))) {
             int errnum = errno;
             PANIC("Failed to write %zu bytes to the output fifo. Reason: %s (%d)", sizeof(int16_t) * dthr->nr_pcm_samples,
                     strerror(errnum), errnum);
         }
-#endif
-        write(dthr->fifo_fd, dthr->fm_samp_out_buf, dthr->nr_fm_samples * sizeof(uint32_t) * 2);
 
         /* We're done with this batch of samples, woohoo */
         dthr->nr_fm_samples = 0;
