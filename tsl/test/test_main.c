@@ -18,7 +18,6 @@ TEST_DECL(test_basic) {
 int main(int argc, char *argv[])
 {
     TEST_START(tsl);
-#if 0
 #ifdef __x86_64__
     TEST_CASE(test_coro);
 #endif
@@ -34,7 +33,6 @@ int main(int argc, char *argv[])
     TEST_CASE(test_cpu_mask);
 #ifdef __x86_64__
     TEST_CASE(test_speed);
-#endif
 #endif
     TEST_CASE(test_atomic_arm);
     TEST_FINISH(tsl);
