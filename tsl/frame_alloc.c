@@ -9,9 +9,15 @@
 #include <errno.h>
 
 #include <stdatomic.h>
+
 #include <ck_pr.h>
 
+#ifdef __ARM_ARCH
+#include <tsl/atomic_arm.h>
+#endif
+
 #include <stdlib.h>
+
 
 #define _FRAME_ALLOC_COUNTS
 

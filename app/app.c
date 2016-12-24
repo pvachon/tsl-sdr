@@ -330,7 +330,9 @@ aresult_t app_init(const char *app_name, struct config *cfg)
 
     signal(SIGPIPE, SIG_IGN);
 
+#ifdef __x86_64__
     TSL_BUG_IF_FAILED(app_cpufeatures_check_at_init());
+#endif
 
     DIAG("Build version: %s", tsl_get_version());
 

@@ -121,10 +121,23 @@ def configure(conf):
 	]
 
 	# Assembler flags (so that the linker will understand the objects)
-	# XXX Needs to be made arch-specific
-	conf.env.ASFLAGS += ['-f', 'elf64']
+	if cpuArch == 'x86_64':
+		conf.env.ASFLAGS += ['-f', 'elf64']
 
 	conf.msg('Building for:', cpuArch)
+
+	tuning = []
+	if cpuArch == 'armv7l':
+		tuning = [
+			'-mcpu=cortex-a53',
+			'-mfpu=crypto-neon-fp-armv8',
+			'-mfloat-abi=hard',
+		]
+	else:
+		tuning = [
+			'-march=native',
+			'-mtune=native',
+		]
 
 	#Setup the environment: debug or release
 	if conf.options.debug:
@@ -133,20 +146,8 @@ def configure(conf):
 		conf.env.ENVIRONMENT = 'debug'
 		conf.env.CFLAGS += [
 			'-O0',
-		]
+		] + tuning
 	else:
-		tuning = []
-		if cpuArch == 'armv7l':
-			tuning = [
-				'-mcpu=cortex-a53',
-				'-mfpu=crypto-neon-fp-armv8',
-				'-mfloat-abi=hard',
-			]
-		else:
-			tuning = [
-				'-march=native',
-				'-mtune=native',
-			]
 
 		stars = '$' * 20
 		conf.msg('Build environment', '%s RELEASE %s' % (stars, stars), color='BOLD')
