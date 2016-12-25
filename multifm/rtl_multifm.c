@@ -518,6 +518,8 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
         }
     }
 
+    DIAG("Sample buf received.");
+
     /* Allocate an output buffer */
     if (FAILED(frame_alloc(thr->samp_alloc, (void **)&sbuf))) {
         MFM_MSG(SEV_INFO, "NO-SAMPLE-BUFFER", "Out of sample buffers.");

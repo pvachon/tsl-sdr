@@ -34,7 +34,6 @@ int main(int argc, char *argv[])
 #ifdef __x86_64__
     TEST_CASE(test_speed);
 #endif
-    TEST_CASE(test_atomic_arm);
     TEST_FINISH(tsl);
     return EXIT_SUCCESS;
 }

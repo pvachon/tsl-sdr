@@ -129,7 +129,7 @@ def configure(conf):
 	tuning = []
 	if cpuArch == 'armv7l':
 		tuning = [
-			'-mcpu=cortex-a53',
+			'-mcpu=cortex-a7',
 			'-mfpu=crypto-neon-fp-armv8',
 			'-mfloat-abi=hard',
 		]

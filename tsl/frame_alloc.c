@@ -21,13 +21,21 @@
 
 #define _FRAME_ALLOC_COUNTS
 
+#if defined(__x86_64__)
+typedef uint64_t counter_t;
+#elif defined(__ARM_ARCH)
+typedef uint32_t counter_t;
+#else
+#error Unknown target CPU architecture, aborting.
+#endif
+
 struct frame_alloc_free {
     struct frame_alloc_free *next;
 } CAL_CACHE_ALIGNED;
 
 struct frame_alloc_head {
     struct frame_alloc_free *free;
-    uint64_t counter;
+    counter_t counter;
 } CAL_PACKED;
 
 struct frame_alloc {
@@ -35,12 +43,12 @@ struct frame_alloc {
 
     void *rgn;
     size_t rgn_len;
-    uint64_t frame_size;
-    uint32_t nr_frames;
+    size_t frame_size;
+    size_t nr_frames;
 #ifdef _FRAME_ALLOC_COUNTS
-    uint64_t frames_outstanding;
-    uint64_t nr_frees;
-    uint64_t nr_allocs;
+    size_t frames_outstanding;
+    size_t nr_frees;
+    size_t nr_allocs;
 #endif
 } CAL_CACHE_ALIGNED;
 
@@ -65,7 +73,8 @@ aresult_t _frame_alloc_pop_free(struct frame_alloc *alloc, void **top_free)
 {
     aresult_t ret = A_OK;
 
-    struct frame_alloc_head cur, new;
+    struct frame_alloc_head cur CAL_ALIGN(SYS_CACHE_LINE_LENGTH),
+                            new CAL_ALIGN(SYS_CACHE_LINE_LENGTH);
     struct frame_alloc_free *sn = NULL;
 
     TSL_ASSERT_ARG_DEBUG(NULL != alloc);
@@ -100,7 +109,8 @@ aresult_t _frame_alloc_push_free(struct frame_alloc *alloc, void *new_top)
 {
     aresult_t ret = A_OK;
 
-    struct frame_alloc_head head, new;
+    struct frame_alloc_head head CAL_ALIGN(SYS_CACHE_LINE_LENGTH),
+                            new CAL_ALIGN(SYS_CACHE_LINE_LENGTH);
     struct frame_alloc_free *phead = NULL;
 
     TSL_ASSERT_ARG_DEBUG(NULL != alloc);
@@ -141,7 +151,7 @@ aresult_t _frame_alloc_init(struct frame_alloc *alloc)
     return ret;
 }
 
-aresult_t frame_alloc_new(struct frame_alloc **palloc, uint64_t frame_bytes, uint32_t nr_frames)
+aresult_t frame_alloc_new(struct frame_alloc **palloc, size_t frame_bytes, size_t nr_frames)
 {
     aresult_t ret = A_OK;
 
@@ -152,6 +162,11 @@ aresult_t frame_alloc_new(struct frame_alloc **palloc, uint64_t frame_bytes, uin
     TSL_ASSERT_ARG(NULL != palloc);
     TSL_ASSERT_ARG(0 < frame_bytes);
     TSL_ASSERT_ARG(0 < nr_frames);
+
+    frame_bytes = (frame_bytes + SYS_CACHE_LINE_LENGTH - 1) & (~(SYS_CACHE_LINE_LENGTH - 1));
+
+    DIAG("Creating new frame allocator, %zu frames of %zu bytes",
+            nr_frames, frame_bytes);
 
     *palloc = NULL;
 
@@ -249,7 +264,7 @@ done:
     return ret;
 }
 
-aresult_t frame_alloc_get_frame_size(struct frame_alloc *alloc, uint64_t *pframe_bytes)
+aresult_t frame_alloc_get_frame_size(struct frame_alloc *alloc, size_t *pframe_bytes)
 {
     aresult_t ret = A_OK;
 

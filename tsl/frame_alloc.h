@@ -16,7 +16,7 @@ struct frame_alloc;
  *
  * \note This should be called from the thread deemed the "owner" of this object.
  */
-aresult_t frame_alloc_new(struct frame_alloc **palloc, uint64_t frame_bytes, uint32_t nr_frames);
+aresult_t frame_alloc_new(struct frame_alloc **palloc, size_t frame_bytes, size_t nr_frames);
 
 /**
  * Deallocate the frame region.
@@ -54,7 +54,7 @@ aresult_t frame_free(struct frame_alloc *alloc, void **pframe);
 /**
  * Get the size of a frame, in bytes
  */
-aresult_t frame_alloc_get_frame_size(struct frame_alloc *alloc, uint64_t *pframe_bytes);
+aresult_t frame_alloc_get_frame_size(struct frame_alloc *alloc, size_t *pframe_bytes);
 
 /**
  * Get internal counter values from the frame alloc
