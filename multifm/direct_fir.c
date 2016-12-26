@@ -12,8 +12,12 @@
 
 #define Q_15_SHIFT          14
 
-//#define _DIRECT_FIR_IMPLEMENTATION
+#if defined(_USE_ARM_NEON)
+/* Use ARM NEON because configuration told us to */
 #define _NEON_FIR_IMPLEMENTATION
+#else
+#define _DIRECT_FIR_IMPLEMENTATION
+#endif /* determine which FIR implementation to use */
 
 aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_t *fir_real_coeff,
         const int16_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,

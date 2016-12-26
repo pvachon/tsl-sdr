@@ -26,7 +26,6 @@
 
 #include <rtl-sdr.h>
 
-#define _USE_ARM_NEON
 #ifdef _USE_ARM_NEON
 #include <arm_neon.h>
 #endif

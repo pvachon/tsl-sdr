@@ -103,6 +103,7 @@ def configure(conf):
 		'.'
 	]
 
+	# FIXME: this is not sane for a lot of environments
 	conf.env.LIBPATH += [
 		'/usr/lib/x86_64-linux-gnu',
 		'/usr/local/lib',
@@ -128,6 +129,10 @@ def configure(conf):
 
 	tuning = []
 	if cpuArch == 'armv7l':
+		# ARM can be a bit quirky. Make sure we specify the right CPU architecture,
+		# and ensure we have the right register set defined.
+		# Also, for now, we shall asume we have NEON available, all the time.
+		conf.env.DEFINES += [ '_USE_ARM_NEON' ]
 		tuning = [
 			'-mcpu=cortex-a7',
 			'-mfpu=crypto-neon-fp-armv8',
@@ -239,7 +244,7 @@ def build(bld):
 	#app
 	appExcl = []
 	if cpuArch == 'armv7l':
-		# We want to ignore coro
+		# We want to ignore the CPU features check, since this relies on x86 CPUID
 		appExcl.append('app/cpufeatures.*')
 	bld.stlib(
 		source   = bld.path.ant_glob('app/*.c', excl=appExcl),
@@ -290,7 +295,7 @@ def build(bld):
 	# Calculate what we might want to exclude for certain architectures
 	excl=['tsl/version.c', 'tsl/test/*.*']
 	if cpuArch == 'armv7l':
-		# We want to ignore coro
+		# We want to ignore coro - there's no ARM implementation yet
 		excl.append('tsl/coro/*.*')
 		excl.append('tsl/timer.c')
 
@@ -340,6 +345,8 @@ def sysinstall(ctx):
 		'build-essential',
 		'pkg-config',
 		'libjansson-dev',
+		'libfftw3-dev',
+		'librtlsdr-dev',
 	]
 
 	os.system('apt-get install %s' % ' '.join(packages))
