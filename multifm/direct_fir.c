@@ -162,10 +162,13 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
 
             /* Samples loaded at offset */
             int16x4x2_t samples;
-            int32x4_t f_re,
-                      f_im;
+            int32x4_t f_acc;
             int16x4_t c_re,
                       c_im;
+
+            __builtin_prefetch(sample_base);
+            __builtin_prefetch(fir->fir_real_coeff + start_samp + start_coeff);
+            __builtin_prefetch(fir->fir_imag_coeff + start_samp + start_coeff);
 
             samples = vld2_s16(sample_base);
 
@@ -175,16 +178,16 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
             c_im = vld1_s16(fir->fir_imag_coeff + start_samp + start_coeff);
 
             /* f_re = s_re * c_re */
-            f_re = vmull_s16(samples.val[0], c_re);
+            f_acc = vmull_s16(samples.val[0], c_re);
             /* f_re -= s_im * c_im */
-            f_re = vmlsl_s16(f_re, samples.val[1], c_im);
-            acc_re_v = vaddq_s32(acc_re_v, f_re);
+            f_acc = vmlsl_s16(f_acc, samples.val[1], c_im);
+            acc_re_v = vaddq_s32(acc_re_v, f_acc);
 
             /* f_im = s_im * c_re */
-            f_im = vmull_s16(samples.val[1], c_re);
+            f_acc = vmull_s16(samples.val[1], c_re);
             /* f_im += c_im * s_re */
-            f_im = vmlal_s16(f_im, c_im, samples.val[0]);
-            acc_im_v = vaddq_s32(acc_im_v, f_im);
+            f_acc = vmlal_s16(f_acc, c_im, samples.val[0]);
+            acc_im_v = vaddq_s32(acc_im_v, f_acc);
         }
 
         /* Reduce the accumulators */

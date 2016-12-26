@@ -26,10 +26,16 @@
 
 #include <rtl-sdr.h>
 
+#define _USE_ARM_NEON
+#ifdef _USE_ARM_NEON
+#include <arm_neon.h>
+#endif
+
 #define RTL_SDR_DEFAULT_NR_SAMPLES      (16 * 32 * 512/2)
 #define LPF_PCM_OUTPUT_LEN              1024
-//#define Q_31_SHIFT                      30
 #define Q_15_SHIFT                      14
+
+#define _DUMP_LPF
 
 /**
  * Sample data type
@@ -389,12 +395,12 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t 
         power += samp_power;
         dpower += ptemp;
 
-        fprintf(stderr, "    complex(%d, %d), %% (%f, %f) P: 0x%016zx ~~ %f\n", coeffs[i], coeffs[base + i], creal(lpf_tap), cimag(lpf_tap), samp_power, ptemp);
+        fprintf(stderr, "    complex(%f, %f), %% (%d, %d)\n", creal(lpf_tap), cimag(lpf_tap), coeffs[i], coeffs[base + i]);
 #endif /* defined(_DUMP_LPF) */
     }
 #ifdef _DUMP_LPF
     fprintf(stderr, "];\n");
-    fprintf(stderr, "%% Total power: %zu (%016zx) (%f)\n", power, power, dpower);
+    fprintf(stderr, "%% Total power: %llu (%016llx) (%f)\n", power, power, dpower);
 #endif /* defined(_DUMP_LPF) */
 
     /* Create a Direct Type FIR implementation */
@@ -520,9 +526,48 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
     sbuf_ptr = (int16_t *)sbuf->data_buf;
 
     /* Up-convert the u8 samples to Q.15, subtract 127 from the unsigned sample to get actual power */
+#ifdef _USE_ARM_NEON
+    int16x8_t samples,
+              sub_const  = { 127, 127, 172, 172, 127, 127, 127, 127 };
+    uint8x8_t raw_samples;
+    for (size_t i = 0; i < len/8; i++) {
+        size_t offs = i * 8;
+
+        __builtin_prefetch(buf + offs);
+
+        /* Load as unsigned 8b */
+        raw_samples = vld1_u8(buf + offs);
+
+        /* Convert to s16 - we can get away with the reinterpret because all values are [0, 255] */
+        samples = vreinterpretq_s16_u16(vmovl_u8(raw_samples));
+
+        /* subtract 127 */
+        samples = vsubq_s16(samples, sub_const);
+
+        /* Shift left by 7 */
+        samples = vqshlq_n_s16(samples, 7);
+
+        /* Store in the output buffer at the appropriate location */
+        vst1q_s16(sbuf_ptr + offs, samples);
+
+#if 0
+        printf("{%d, %d, %d, %d, %d, %d, %d, %d}\n",
+                samples[0], samples[1], samples[2], samples[3], samples[4], samples[5], samples[6], samples[7]);
+#endif
+    }
+
+    /* If there's a remainder because the sample count is not divisible by 8, process the remainder */
+    size_t buf_offs = len & ~(8 - 1);
+
+    for (size_t i = 0; i < len % 8; i++) {
+        sbuf_ptr[i + buf_offs] = ((int16_t)buf[i + buf_offs] - 127) << 7;
+    }
+
+#else /* Works for any architecture */
     for (size_t i = 0; i < len; i++) {
         sbuf_ptr[i] = ((int16_t)buf[i] - 127) << 7;
     }
+#endif
 
     sbuf->nr_samples = len / 2;
     atomic_store(&sbuf->refcount, thr->nr_demod_threads);
