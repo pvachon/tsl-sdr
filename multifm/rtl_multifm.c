@@ -34,8 +34,6 @@
 #define LPF_PCM_OUTPUT_LEN              1024
 #define Q_15_SHIFT                      14
 
-#define _DUMP_LPF
-
 /**
  * Sample data type
  */
