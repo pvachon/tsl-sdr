@@ -10,10 +10,10 @@
 #include <math.h>
 #include <complex.h>
 
-//#define Q_15_SHIFT          30
 #define Q_15_SHIFT          14
 
-#define _DIRECT_FIR_IMPLEMENTATION
+//#define _DIRECT_FIR_IMPLEMENTATION
+#define _NEON_FIR_IMPLEMENTATION
 
 aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_t *fir_real_coeff,
         const int16_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,
@@ -112,7 +112,157 @@ done:
     return ret;
 }
 
-#ifdef _DIRECT_FIR_IMPLEMENTATION
+#if defined(_NEON_FIR_IMPLEMENTATION)
+#include <arm_neon.h>
+
+static
+aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_real, int16_t *psample_imag)
+{
+    aresult_t ret = A_OK;
+
+    size_t coeffs_remain = 0,
+           buf_offset = 0;
+    struct sample_buf *cur_buf = NULL;
+
+    int32_t acc_re = 0,
+            acc_im = 0;
+
+    TSL_ASSERT_ARG_DEBUG(NULL != fir);
+    TSL_ASSERT_ARG_DEBUG(NULL != psample_real);
+    TSL_ASSERT_ARG_DEBUG(NULL != psample_imag);
+
+    coeffs_remain = fir->nr_coeffs;
+    cur_buf = fir->sb_active;
+    buf_offset = fir->sample_offset;
+
+    /* Check if we have enough samples available */
+    if (fir->sample_offset + fir->nr_coeffs > fir->sb_active->nr_samples && fir->sb_next == NULL) {
+        ret = A_E_DONE;
+        goto done;
+    }
+
+    do {
+        /* Temporary vector accumulators */
+        int32x4_t acc_re_v = { 0, 0, 0, 0 },
+                  acc_im_v = { 0, 0, 0, 0 };
+
+        /* Figure out how many samples to pull out */
+        size_t nr_samples_in = cur_buf->nr_samples - buf_offset,
+               start_coeff = fir->nr_coeffs - coeffs_remain;
+
+        /* Snap to either the number of coefficients in the FIR or the number of remaining
+         * coefficients, whichever is smaller.
+         */
+        nr_samples_in = BL_MIN2(nr_samples_in, coeffs_remain);
+
+        for (size_t i = 0; i < nr_samples_in / 4; i++) {
+            size_t start_samp = i * 4;
+            int16_t *sample_base =
+                (int16_t *)(cur_buf->data_buf + (sizeof(int16_t) * 2 * (buf_offset + start_samp)));
+
+            /* Samples loaded at offset */
+            int16x4x2_t samples;
+            int32x4_t f_re,
+                      f_im;
+            int16x4_t c_re,
+                      c_im;
+
+            samples = vld2_s16(sample_base);
+
+            /* c_re = vec4(fir_real_coeff + start_samp + start_coeff) */
+            c_re = vld1_s16(fir->fir_real_coeff + start_samp + start_coeff);
+            /* c_im = vec4(fir_imag_coeff + start_samp + start_coeff) */
+            c_im = vld1_s16(fir->fir_imag_coeff + start_samp + start_coeff);
+
+            /* f_re = s_re * c_re */
+            f_re = vmull_s16(samples.val[0], c_re);
+            /* f_re -= s_im * c_im */
+            f_re = vmlsl_s16(f_re, samples.val[1], c_im);
+            acc_re_v = vaddq_s32(acc_re_v, f_re);
+
+            /* f_im = s_im * c_re */
+            f_im = vmull_s16(samples.val[1], c_re);
+            /* f_im += c_im * s_re */
+            f_im = vmlal_s16(f_im, c_im, samples.val[0]);
+            acc_im_v = vaddq_s32(acc_im_v, f_im);
+        }
+
+        /* Reduce the accumulators */
+        acc_re += acc_re_v[0] + acc_re_v[1] + acc_re_v[2] + acc_re_v[3];
+        acc_im += acc_im_v[0] + acc_im_v[1] + acc_im_v[2] + acc_im_v[3];
+
+        size_t res_start = nr_samples_in & ~(4 - 1);
+
+        for (size_t i = 0; i < nr_samples_in % 4; i++) {
+            TSL_BUG_ON(i + start_coeff >= fir->nr_coeffs);
+            TSL_BUG_ON(i + buf_offset >= cur_buf->nr_samples);
+
+            int16_t *sample = &((int16_t *)cur_buf->data_buf)[2 * (buf_offset + res_start + i)];
+
+            int32_t s_re = sample[0],
+                    s_im = sample[1],
+                    c_re = fir->fir_real_coeff[i + start_coeff + res_start],
+                    c_im = fir->fir_imag_coeff[i + start_coeff + res_start],
+                    f_re = 0,
+                    f_im = 0;
+
+            /* Filter the sample */
+            f_re = c_re * s_re - c_im * s_im;
+            f_im = c_re * s_im + c_im * s_re;
+
+            /* Accumulate the sample */
+            acc_re += f_re;
+            acc_im += f_im;
+        }
+
+        /* If we iterate through, we'll start at the beginning of the next buffer */
+        buf_offset = 0;
+        cur_buf = fir->sb_next;
+        coeffs_remain -= nr_samples_in;
+    } while (0 != coeffs_remain);
+
+    /* Check if the next sample will start in the following buffer; if so, move along */
+    if (fir->sample_offset + fir->decimate_factor > fir->sb_active->nr_samples) {
+        fir->sb_active = fir->sb_next;
+        fir->sb_next = NULL;
+        fir->sample_offset = (fir->sample_offset + fir->decimate_factor) - fir->sb_active->nr_samples;
+    } else {
+        fir->sample_offset += fir->decimate_factor;
+    }
+
+    fir->nr_samples -= fir->decimate_factor;
+
+    /* Apply a phase rotation, if appropriate */
+    if (0 != fir->rot_phase_incr_re && 0 != fir->rot_phase_incr_im) {
+        /* Convert the accumulated sample to Q.15 */
+        acc_re >>= Q_15_SHIFT;
+        acc_im >>= Q_15_SHIFT;
+
+        /* Apply the phase derotation */
+        int32_t z_re = acc_re * fir->rot_phase_re - acc_im * fir->rot_phase_im,
+                z_im = acc_re * fir->rot_phase_im + acc_im * fir->rot_phase_re;
+
+        acc_re = z_re;
+        acc_im = z_im;
+
+        int32_t ph_re = fir->rot_phase_re * fir->rot_phase_incr_re - fir->rot_phase_im * fir->rot_phase_incr_im,
+                ph_im = fir->rot_phase_im * fir->rot_phase_incr_re + fir->rot_phase_re * fir->rot_phase_incr_im;
+
+        fir->rot_phase_re = ph_re >> Q_15_SHIFT;
+        fir->rot_phase_im = ph_im >> Q_15_SHIFT;
+
+        fir->rot_counter++;
+    }
+
+    /* Return the computed sample, in Q.31 (currently in Q.62 due to the prior multiplications) */
+    *psample_real = acc_re >> Q_15_SHIFT;
+    *psample_imag = acc_im >> Q_15_SHIFT;
+
+done:
+    return ret;
+}
+
+#elif defined(_DIRECT_FIR_IMPLEMENTATION)
 static
 aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_real, int16_t *psample_imag)
 {
@@ -157,11 +307,8 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
 
             int16_t *sample = &((int16_t *)cur_buf->data_buf)[2 * (buf_offset + i)];
 
-            int32_t raw_samp_re = sample[0],
-                    raw_samp_im = sample[1];
-
-            int32_t s_re = raw_samp_re << 7,
-                    s_im = raw_samp_im << 7,
+            int32_t s_re = (int32_t)sample[0],
+                    s_im = (int32_t)sample[1],
                     c_re = fir->fir_real_coeff[i + start_coeff],
                     c_im = fir->fir_imag_coeff[i + start_coeff],
                     f_re = 0,
@@ -222,7 +369,9 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
 done:
     return ret;
 }
-#endif
+#else /* no FIR implementation defined */
+#error No FIR implementation has been defined.
+#endif /* _NEON_FIR_IMPLEMENTATION */
 
 aresult_t direct_fir_process(struct direct_fir *fir, int16_t *out_buf, size_t nr_out_samples,
         size_t *nr_out_samples_generated)

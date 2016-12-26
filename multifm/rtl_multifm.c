@@ -499,13 +499,6 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
     int16_t *sbuf_ptr = NULL;
     struct demod_thread *dthr = NULL;
 
-#ifdef _DUMP_SAMPLE_STATS
-    int16_t min = INT16_MAX,
-            max = INT16_MIN;
-    int64_t total = 0,
-            total_squared = 0;
-#endif
-
     if (true == thr->muted) {
         DIAG("Worker is muted.");
         /* If the receiver side is muted, there's no need to process this buffer */
@@ -518,8 +511,6 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
         }
     }
 
-    DIAG("Sample buf received.");
-
     /* Allocate an output buffer */
     if (FAILED(frame_alloc(thr->samp_alloc, (void **)&sbuf))) {
         MFM_MSG(SEV_INFO, "NO-SAMPLE-BUFFER", "Out of sample buffers.");
@@ -528,23 +519,10 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
 
     sbuf_ptr = (int16_t *)sbuf->data_buf;
 
-    /* Up-convert the u8 samples to s16, subtract 127 to get actual power */
+    /* Up-convert the u8 samples to Q.15, subtract 127 from the unsigned sample to get actual power */
     for (size_t i = 0; i < len; i++) {
-        sbuf_ptr[i] = (int16_t)buf[i] - 127;
+        sbuf_ptr[i] = ((int16_t)buf[i] - 127) << 7;
     }
-
-#ifdef _DUMP_SAMPLE_STATS
-    for (size_t i = 0; i < len/2; i++) {
-        double samp = sqrt(sbuf_ptr[2 * i] * sbuf_ptr[2 * i] +
-                sbuf_ptr[2 * i + 1] * sbuf_ptr[2 * i + 1]);
-        min = BL_MIN2(min, samp);
-        max = BL_MAX2(max, samp);
-        total += samp + 0.5;
-        total_squared += samp * samp + 0.5;
-    }
-
-    printf("min: %d max: %d mean: %f\n", (int)min, (int)max, (double)total/(double)len);
-#endif
 
     sbuf->nr_samples = len / 2;
     atomic_store(&sbuf->refcount, thr->nr_demod_threads);
