@@ -98,6 +98,12 @@ aresult_t direct_fir_push_sample_buf(struct direct_fir *fir, struct sample_buf *
 {
     aresult_t ret = A_OK;
 
+    TSL_ASSERT_ARG(NULL != fir);
+    TSL_ASSERT_ARG(NULL != buf);
+
+    TSL_BUG_ON(fir->sb_active == buf);
+    TSL_BUG_ON(fir->sb_next == buf);
+
     if (NULL == fir->sb_active) {
         fir->sb_active = buf;
         TSL_BUG_ON(NULL != fir->sb_next);
@@ -109,6 +115,8 @@ aresult_t direct_fir_push_sample_buf(struct direct_fir *fir, struct sample_buf *
             goto done;
         }
     }
+
+    DIAG("PUSH(active = %p next = %p)", fir->sb_active, fir->sb_next);
 
     fir->nr_samples += buf->nr_samples;
 
@@ -134,6 +142,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
     TSL_ASSERT_ARG_DEBUG(NULL != fir);
     TSL_ASSERT_ARG_DEBUG(NULL != psample_real);
     TSL_ASSERT_ARG_DEBUG(NULL != psample_imag);
+    TSL_BUG_ON(NULL == fir->sb_active);
 
     coeffs_remain = fir->nr_coeffs;
     cur_buf = fir->sb_active;
@@ -158,6 +167,11 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
          * coefficients, whichever is smaller.
          */
         nr_samples_in = BL_MIN2(nr_samples_in, coeffs_remain);
+
+        if (coeffs_remain != fir->nr_coeffs) {
+            DIAG("Samples from buffer: %zu, start coefficient: %zu (%zu remain) start offset %zu",
+                    nr_samples_in, start_coeff, coeffs_remain, buf_offset);
+        }
 
         for (size_t i = 0; i < nr_samples_in / 4; i++) {
             size_t start_samp = i * 4;
@@ -226,10 +240,16 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
         buf_offset = 0;
         cur_buf = fir->sb_next;
         coeffs_remain -= nr_samples_in;
+
+        if (0 != coeffs_remain) {
+            DIAG("COEFF: %zu remain, buffer = %p (prev = %p), %zu samples in",
+                    coeffs_remain, cur_buf, fir->sb_active, nr_samples_in);
+        }
     } while (0 != coeffs_remain);
 
     /* Check if the next sample will start in the following buffer; if so, move along */
-    if (fir->sample_offset + fir->decimate_factor > fir->sb_active->nr_samples) {
+    if (fir->sample_offset + fir->decimate_factor >= fir->sb_active->nr_samples) {
+        TSL_BUG_IF_FAILED(sample_buf_decref(fir->dthr, fir->sb_active));
         fir->sb_active = fir->sb_next;
         fir->sb_next = NULL;
         fir->sample_offset = (fir->sample_offset + fir->decimate_factor) - fir->sb_active->nr_samples;
@@ -261,7 +281,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
         fir->rot_counter++;
     }
 
-    /* Return the computed sample, in Q.31 (currently in Q.62 due to the prior multiplications) */
+    /* Return the computed sample, in Q.15 (currently in Q.30 due to the prior multiplication) */
     *psample_real = acc_re >> Q_15_SHIFT;
     *psample_imag = acc_im >> Q_15_SHIFT;
 
@@ -338,6 +358,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
 
     /* Check if the next sample will start in the following buffer; if so, move along */
     if (fir->sample_offset + fir->decimate_factor > fir->sb_active->nr_samples) {
+        TSL_BUG_IF_FAILED(sample_buf_decref(fir->dthr, fir->sb_active));
         fir->sb_active = fir->sb_next;
         fir->sb_next = NULL;
         fir->sample_offset = (fir->sample_offset + fir->decimate_factor) - fir->sb_active->nr_samples;

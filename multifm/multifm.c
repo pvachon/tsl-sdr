@@ -176,7 +176,7 @@ aresult_t sample_buf_decref(struct demod_thread *thr, struct sample_buf *buf)
 
     /* Decrement the reference count */
     if (1 == atomic_fetch_sub(&buf->refcount, 1)) {
-        DIAG("Freeing buffer at %p", buf);
+        DIAG("FREED: %p", buf);
         TSL_BUG_IF_FAILED(frame_free(thr->samp_buf_alloc, (void **)&buf));
     }
 
@@ -277,9 +277,6 @@ aresult_t _demod_thread_work(struct worker_thread *wthr)
 
             /* Process the buffer */
             TSL_BUG_IF_FAILED(demod_thread_process(dthr, buf));
-
-            /* Release the buffer reference */
-            TSL_BUG_IF_FAILED(sample_buf_decref(dthr, buf));
 
             /* Re-acquire the lock */
             pthread_mutex_lock(&dthr->wq_mtx);
@@ -519,6 +516,8 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
         MFM_MSG(SEV_INFO, "NO-SAMPLE-BUFFER", "Out of sample buffers.");
         goto done;
     }
+
+    DIAG("ALLOC: %p", sbuf);
 
     sbuf_ptr = (int16_t *)sbuf->data_buf;
 
@@ -1036,6 +1035,8 @@ int main(int argc, const char *argv[])
     TSL_BUG_IF_FAILED(_rtl_sdr_worker_thread_new(cfg, center_freq_hz, sample_freq_hz, falloc, &rtl_thr));
 
     rtl_thr->muted = false;
+
+    MFM_MSG(SEV_INFO, "CAPTURING", "Starting capture and demodulation process.");
 
     while (app_running()) {
         sleep(1);
