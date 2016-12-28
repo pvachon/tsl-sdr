@@ -525,7 +525,7 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
     /* Up-convert the u8 samples to Q.15, subtract 127 from the unsigned sample to get actual power */
 #ifdef _USE_ARM_NEON
     int16x8_t samples,
-              sub_const  = { 127, 127, 172, 172, 127, 127, 127, 127 };
+              sub_const  = { 127, 127, 127, 127, 127, 127, 127, 127 };
     uint8x8_t raw_samples;
     for (size_t i = 0; i < len/8; i++) {
         size_t offs = i * 8;
