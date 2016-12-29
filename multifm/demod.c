@@ -231,12 +231,12 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t 
 #endif
 
         /* Calculate the Q31 coefficient */
-        coeffs[       i] = (int16_t)(creal(lpf_tap) * q15 + 0.5);
-        coeffs[base + i] = (int16_t)(cimag(lpf_tap) * q15 + 0.5);
+        coeffs[       i] = (int16_t)(creal(lpf_tap) * q15);
+        coeffs[base + i] = (int16_t)(cimag(lpf_tap) * q15);
 
 #ifdef _DUMP_LPF
         ptemp = sqrt( (creal(lpf_tap) * creal(lpf_tap)) + (cimag(lpf_tap) * cimag(lpf_tap)) );
-        samp_power = sqrt( ((int64_t)coeffs[i] * (int64_t)coeffs[i]) + ((int64_t)coeffs[base + i] * (int64_t)coeffs[base + i]) ) + 0.5;
+        samp_power = sqrt( ((int64_t)coeffs[i] * (int64_t)coeffs[i]) + ((int64_t)coeffs[base + i] * (int64_t)coeffs[base + i]) );
 
         power += samp_power;
         dpower += ptemp;

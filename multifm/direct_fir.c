@@ -11,6 +11,7 @@
 #include <complex.h>
 
 #define Q_15_SHIFT          14
+#define DEROTATOR_RESET     512
 
 #if defined(_USE_ARM_NEON)
 /* Use ARM NEON because configuration told us to */
@@ -53,8 +54,8 @@ aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_
         double fwt0 = 2.0 * M_PI * (double)freq_shift / (double)sampling_rate,
                q15 = 1ll << Q_15_SHIFT;
         complex double derotate_incr = cexp(CMPLX(0, -fwt0 * (double)decimation_factor));
-        fir->rot_phase_incr_re = (int32_t)(creal(derotate_incr) * q15 + 0.5);
-        fir->rot_phase_incr_im = (int32_t)(cimag(derotate_incr) * q15 + 0.5);
+        fir->rot_phase_incr_re = (int32_t)(creal(derotate_incr) * q15);
+        fir->rot_phase_incr_im = (int32_t)(cimag(derotate_incr) * q15);
         fir->rot_phase_re = 1ul << Q_15_SHIFT;
         fir->rot_phase_im = 0;
         DIAG("Derotation factor: %f, %f (%08x, %08x -> %f, %f)", creal(derotate_incr), cimag(derotate_incr),
@@ -136,10 +137,6 @@ aresult_t _direct_fir_apply_derotation(struct direct_fir *fir, int32_t acc_re_in
     TSL_ASSERT_ARG_DEBUG(NULL != acc_re_out);
     TSL_ASSERT_ARG_DEBUG(NULL != acc_im_out);
 
-    /* Convert the accumulated sample to Q.15 */
-    acc_re_in >>= Q_15_SHIFT;
-    acc_im_in >>= Q_15_SHIFT;
-
     /* Apply the phase derotation */
     int32_t z_re = acc_re_in * fir->rot_phase_re - acc_im_in * fir->rot_phase_im,
             z_im = acc_re_in * fir->rot_phase_im + acc_im_in * fir->rot_phase_re;
@@ -155,18 +152,6 @@ aresult_t _direct_fir_apply_derotation(struct direct_fir *fir, int32_t acc_re_in
     fir->rot_phase_im = ph_im >> Q_15_SHIFT;
 
     fir->rot_counter++;
-
-    if (0 == fir->rot_counter % 256) {
-        double q15 = 1ll << Q_15_SHIFT;
-        complex double phase = CMPLX((double)fir->rot_phase_re/q15, (double)fir->rot_phase_im/q15);
-
-        DIAG("Phase magnitude component: %f", fabs(phase));
-        /* Normalize - error accumulation is a PIT */
-        phase /= abs(phase);
-
-        fir->rot_phase_re = (int32_t)(creal(phase) * q15 + 0.5);
-        fir->rot_phase_im = (int32_t)(cimag(phase) * q15 + 0.5);
-    }
 
     return ret;
 }
@@ -308,6 +293,10 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
 
     /* Apply a phase rotation, if appropriate */
     if (!(0 == fir->rot_phase_incr_re && 0 == fir->rot_phase_incr_im)) {
+        /* Convert the accumulated sample to Q.15 */
+        acc_re >>= Q_15_SHIFT;
+        acc_im >>= Q_15_SHIFT;
+
         TSL_BUG_IF_FAILED(_direct_fir_apply_derotation(fir, acc_re, acc_im, &acc_re, &acc_im));
     }
 
@@ -400,6 +389,10 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
 
     /* Apply a phase rotation, if appropriate */
     if (!(0 == fir->rot_phase_incr_re && 0 == fir->rot_phase_incr_im)) {
+        /* Convert the accumulated sample to Q.15 */
+        acc_re >>= Q_15_SHIFT;
+        acc_im >>= Q_15_SHIFT;
+
         TSL_BUG_IF_FAILED(_direct_fir_apply_derotation(fir, acc_re, acc_im, &acc_re, &acc_im));
     }
 
