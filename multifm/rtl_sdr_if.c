@@ -24,7 +24,7 @@
 
 #include <rtl-sdr.h>
 
-#define RTL_SDR_CONVERSION_SHIFT        6
+#define RTL_SDR_CONVERSION_SHIFT        5
 
 /**
  * RTL-SDR API Callback, hit every time there is a full sample buffer to be
