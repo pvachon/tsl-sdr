@@ -105,14 +105,14 @@
     do {                            \
         uint32_t hi = 0, lo = 0;                                                                                                                \
         time_get_time_frac(&hi, &lo);                                                                                                           \
-        fprintf(stderr, "[%9u.%09u] [tid=%5d] %%%s-" severity "-" ident ", " message " (%s:%d in %s)\n", hi, lo, (int)syscall(SYS_gettid), subsys, ##__VA_ARGS__, __FILE__, __LINE__, __FUNCTION__); \
+        fprintf(stderr, "[%9u.%09u] [tid=%5d] %%" subsys "-" severity "-" ident ", " message " (%s:%d in %s)\n", hi, lo, (int)syscall(SYS_gettid), ##__VA_ARGS__, __FILE__, __LINE__, __FUNCTION__); \
     } while (0)
 
 #else
 
 #define MESSAGE(subsys, severity, ident, message, ...) \
     do {                            \
-        fprintf(stderr, "%%%s-" severity "-" ident ", " message " (%s:%d in %s)\n", subsys, ##__VA_ARGS__, __FILE__, __LINE__, __FUNCTION__); \
+        fprintf(stderr, "%%" subsys "-" severity "-" ident ", " message " (%s:%d in %s)\n", ##__VA_ARGS__, __FILE__, __LINE__, __FUNCTION__); \
     } while (0)
 #endif /* defined(_TSL_DEBUG) && undefined(_TSL_NO_DIAG_TIMESTAMPS) */
 
