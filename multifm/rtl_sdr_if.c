@@ -24,6 +24,8 @@
 
 #include <rtl-sdr.h>
 
+#define RTL_SDR_CONVERSION_SHIFT        6
+
 /**
  * RTL-SDR API Callback, hit every time there is a full sample buffer to be
  * processed.
@@ -83,27 +85,22 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
         samples = vsubq_s16(samples, sub_const);
 
         /* Shift left by 7 */
-        samples = vqshlq_n_s16(samples, 7);
+        samples = vqshlq_n_s16(samples, RTL_SDR_CONVERSION_SHIFT);
 
         /* Store in the output buffer at the appropriate location */
         vst1q_s16(sbuf_ptr + offs, samples);
-
-#if 0
-        printf("{%d, %d, %d, %d, %d, %d, %d, %d}\n",
-                samples[0], samples[1], samples[2], samples[3], samples[4], samples[5], samples[6], samples[7]);
-#endif
     }
 
     /* If there's a remainder because the sample count is not divisible by 8, process the remainder */
     size_t buf_offs = len & ~(8 - 1);
 
     for (size_t i = 0; i < len % 8; i++) {
-        sbuf_ptr[i + buf_offs] = ((int16_t)buf[i + buf_offs] - 127) << 7;
+        sbuf_ptr[i + buf_offs] = ((int16_t)buf[i + buf_offs] - 127) << RTL_SDR_CONVERSION_SHIFT;
     }
 
 #else /* Works for any architecture */
     for (size_t i = 0; i < len; i++) {
-        sbuf_ptr[i] = ((int16_t)buf[i] - 127) << 7;
+        sbuf_ptr[i] = ((int16_t)buf[i] - 127) << RTL_SDR_CONVERSION_SHIFT;
     }
 #endif
 
