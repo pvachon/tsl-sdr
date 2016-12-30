@@ -208,7 +208,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
         for (size_t i = 0; i < nr_samples_in / 4; i++) {
             size_t start_samp = i * 4;
             int16_t *sample_base =
-                (int16_t *)(cur_buf->data_buf + (sizeof(int16_t) * 2 * (buf_offset + start_samp)));
+                (int16_t *)((uint8_t *)cur_buf->data_buf + (sizeof(int16_t) * 2 * (buf_offset + start_samp)));
 
             /* Samples loaded at offset */
             int16x4x2_t samples;
@@ -244,11 +244,12 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
         acc_re += acc_re_v[0] + acc_re_v[1] + acc_re_v[2] + acc_re_v[3];
         acc_im += acc_im_v[0] + acc_im_v[1] + acc_im_v[2] + acc_im_v[3];
 
-        size_t res_start = nr_samples_in & ~(4 - 1);
+        size_t res_start = nr_samples_in & ~((size_t)4 - 1);
 
         for (size_t i = 0; i < nr_samples_in % 4; i++) {
-            TSL_BUG_ON(i + start_coeff >= fir->nr_coeffs);
-            TSL_BUG_ON(i + buf_offset >= cur_buf->nr_samples);
+            TSL_BUG_ON(i + res_start + start_coeff >= fir->nr_coeffs);
+            TSL_BUG_ON(i + res_start + buf_offset >= cur_buf->nr_samples);
+            DIAG("Processing sample %zu (base = %zu)", i + res_start, res_start);
 
             int16_t *sample = &((int16_t *)cur_buf->data_buf)[2 * (buf_offset + res_start + i)];
 
@@ -281,17 +282,20 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
 
     /* Check if the next sample will start in the following buffer; if so, move along */
     if (fir->sample_offset + fir->decimate_factor >= fir->sb_active->nr_samples) {
+        size_t cur_nr_samples = fir->sb_active->nr_samples;
+
         TSL_BUG_IF_FAILED(sample_buf_decref(fir->dthr, fir->sb_active));
+
         fir->sb_active = fir->sb_next;
         fir->sb_next = NULL;
-        fir->sample_offset = (fir->sample_offset + fir->decimate_factor) - fir->sb_active->nr_samples;
+        fir->sample_offset = (fir->sample_offset + fir->decimate_factor) - cur_nr_samples;
     } else {
         fir->sample_offset += fir->decimate_factor;
     }
 
     fir->nr_samples -= fir->decimate_factor;
 
-    /* Apply a phase rotation, if appropriate */
+    /* Apply a phase (de)rotation, if appropriate */
     if (!(0 == fir->rot_phase_incr_re && 0 == fir->rot_phase_incr_im)) {
         /* Convert the accumulated sample to Q.15 */
         acc_re >>= Q_15_SHIFT;
@@ -396,7 +400,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
         TSL_BUG_IF_FAILED(_direct_fir_apply_derotation(fir, acc_re, acc_im, &acc_re, &acc_im));
     }
 
-    /* Return the computed sample, in Q.31 (currently in Q.62 due to the prior multiplications) */
+    /* Return the computed sample, in Q.15 (currently in Q.30 due to the prior multiplications) */
     *psample_real = acc_re >> Q_15_SHIFT;
     *psample_imag = acc_im >> Q_15_SHIFT;
 
