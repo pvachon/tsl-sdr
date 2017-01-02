@@ -1,7 +1,7 @@
 #include <multifm/multifm.h>
-#include <multifm/sambuf.h>
-#include <multifm/direct_fir.h>
 #include <multifm/rtl_sdr_if.h>
+
+#include <filter/sample_buf.h>
 
 #include <config/engine.h>
 

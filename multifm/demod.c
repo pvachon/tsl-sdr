@@ -1,7 +1,8 @@
 #include <multifm/demod.h>
-#include <multifm/direct_fir.h>
-#include <multifm/sambuf.h>
 #include <multifm/multifm.h>
+
+#include <filter/direct_fir.h>
+#include <filter/sample_buf.h>
 
 #include <tsl/frame_alloc.h>
 #include <tsl/errors.h>
@@ -20,22 +21,6 @@
 #endif
 
 #define Q_15_SHIFT                      14
-
-aresult_t sample_buf_decref(struct demod_thread *thr, struct sample_buf *buf)
-{
-    aresult_t ret = A_OK;
-
-    TSL_ASSERT_ARG(NULL != thr);
-    TSL_ASSERT_ARG(NULL != buf);
-
-    /* Decrement the reference count */
-    if (1 == atomic_fetch_sub(&buf->refcount, 1)) {
-        DIAG("FREED: %p", buf);
-        TSL_BUG_IF_FAILED(frame_free(thr->samp_buf_alloc, (void **)&buf));
-    }
-
-    return ret;
-}
 
 static
 aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbuf)
@@ -250,7 +235,7 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t 
 #endif /* defined(_DUMP_LPF) */
 
     /* Create a Direct Type FIR implementation */
-    TSL_BUG_IF_FAILED(direct_fir_init(&thr->fir, lpf_nr_taps, coeffs, &coeffs[base], decimation, thr, true, sample_rate, offset_hz));
+    TSL_BUG_IF_FAILED(direct_fir_init(&thr->fir, lpf_nr_taps, coeffs, &coeffs[base], decimation, true, sample_rate, offset_hz));
 
 done:
     if (NULL != coeffs) {
@@ -260,7 +245,7 @@ done:
     return ret;
 }
 
-aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id, struct frame_alloc *samp_buf_alloc,
+aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
         double *lpf_taps, size_t lpf_nr_taps)
 {
@@ -269,7 +254,6 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id, struct 
     struct demod_thread *thr = NULL;
 
     TSL_ASSERT_ARG(NULL != pthr);
-    TSL_ASSERT_ARG(NULL != samp_buf_alloc);
     TSL_ASSERT_ARG(NULL != out_fifo && '\0' != *out_fifo);
     TSL_ASSERT_ARG(0 != decimation_factor);
     TSL_ASSERT_ARG(NULL != lpf_taps);
@@ -308,8 +292,6 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id, struct 
         MFM_MSG(SEV_FATAL, "CANT-OPEN-FIFO", "Unable to open output fifo '%s'", out_fifo);
         goto done;
     }
-
-    thr->samp_buf_alloc = samp_buf_alloc;
 
     list_init(&thr->dt_node);
 

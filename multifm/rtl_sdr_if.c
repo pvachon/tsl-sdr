@@ -1,7 +1,8 @@
-#include <multifm/sambuf.h>
 #include <multifm/rtl_sdr_if.h>
 #include <multifm/multifm.h>
 #include <multifm/demod.h>
+
+#include <filter/sample_buf.h>
 
 #include <config/engine.h>
 
@@ -25,6 +26,30 @@
 #include <rtl-sdr.h>
 
 #define RTL_SDR_CONVERSION_SHIFT        5
+
+/**
+ * Free a live sample buffer.
+ *
+ * \param buf The buffer to free
+ * 
+ * \return A_OK on success, an error code otherwise.
+ */
+static
+aresult_t _sample_buf_release(struct sample_buf *buf)
+{
+    aresult_t ret = A_OK;
+
+    struct frame_alloc *fa = NULL;
+
+    TSL_ASSERT_ARG(NULL != buf);
+    TSL_BUG_ON(atomic_load(&buf->refcount) != 0);
+
+    fa = buf->priv;
+
+    TSL_BUG_IF_FAILED(frame_free(fa, (void **)&buf));
+
+    return ret;
+}
 
 /**
  * RTL-SDR API Callback, hit every time there is a full sample buffer to be
@@ -60,6 +85,9 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
         MFM_MSG(SEV_INFO, "NO-SAMPLE-BUFFER", "Out of sample buffers.");
         goto done;
     }
+
+    sbuf->release = _sample_buf_release;
+    sbuf->priv = thr->samp_alloc;
 
     DIAG("ALLOC: %p", sbuf);
 
@@ -397,7 +425,7 @@ aresult_t rtl_sdr_worker_thread_new(
         DIAG("Center Frequency: %d Hz FIFO: %s", nb_center_freq, fifo_name);
 
         /* Create demodulator thread object */
-        if (FAILED(demod_thread_new(&dmt, -1, samp_buf_alloc, (int32_t)nb_center_freq - center_freq,
+        if (FAILED(demod_thread_new(&dmt, -1, (int32_t)nb_center_freq - center_freq,
                         sample_rate, fifo_name, decimation_factor, lpf_taps, lpf_nr_taps)))
         {
             MFM_MSG(SEV_ERROR, "FAILED-DEMOD-THREAD", "Failed to create demodulator thread, aborting.");

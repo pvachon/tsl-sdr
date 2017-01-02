@@ -1,5 +1,5 @@
-#include <multifm/direct_fir.h>
-#include <multifm/sambuf.h>
+#include <filter/direct_fir.h>
+#include <filter/sample_buf.h>
 
 #include <tsl/errors.h>
 #include <tsl/assert.h>
@@ -21,7 +21,7 @@
 #endif /* determine which FIR implementation to use */
 
 aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_t *fir_real_coeff,
-        const int16_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,
+        const int16_t *fir_imag_coeff, unsigned decimation_factor,
         bool derotate, uint32_t sampling_rate, int32_t freq_shift)
 {
     aresult_t ret = A_OK;
@@ -31,7 +31,6 @@ aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_
     TSL_ASSERT_ARG(NULL != fir_real_coeff);
     TSL_ASSERT_ARG(NULL != fir_imag_coeff);
     TSL_ASSERT_ARG(0 != decimation_factor);
-    TSL_ASSERT_ARG(NULL != dthr);
 
     DIAG("FIR: Preparing %zu coefficients, decimation by %u, with%s derotation, sampling rate = %u frequency_shift = %d",
             nr_coeffs, decimation_factor, true == derotate ? "" : "out", sampling_rate, freq_shift);
@@ -44,7 +43,6 @@ aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_
     memcpy(fir->fir_imag_coeff, fir_imag_coeff, nr_coeffs * sizeof(int16_t));
 
     fir->decimate_factor = decimation_factor;
-    fir->dthr = dthr;
     fir->nr_coeffs = nr_coeffs;
 
     fir->rot_phase_re = 0;
@@ -82,16 +80,15 @@ aresult_t direct_fir_cleanup(struct direct_fir *fir)
     }
 
     if (NULL != fir->sb_active) {
-        sample_buf_decref(fir->dthr, fir->sb_active);
+        sample_buf_decref(fir->sb_active);
         fir->sb_active = NULL;
     }
 
     if (NULL != fir->sb_next) {
-        sample_buf_decref(fir->dthr, fir->sb_next);
+        sample_buf_decref(fir->sb_next);
         fir->sb_next = NULL;
     }
 
-    fir->dthr = NULL;
     fir->decimate_factor = 0;
 
     return ret;
@@ -284,7 +281,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
     if (fir->sample_offset + fir->decimate_factor >= fir->sb_active->nr_samples) {
         size_t cur_nr_samples = fir->sb_active->nr_samples;
 
-        TSL_BUG_IF_FAILED(sample_buf_decref(fir->dthr, fir->sb_active));
+        TSL_BUG_IF_FAILED(sample_buf_decref(fir->sb_active));
 
         fir->sb_active = fir->sb_next;
         fir->sb_next = NULL;
@@ -381,7 +378,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
 
     /* Check if the next sample will start in the following buffer; if so, move along */
     if (fir->sample_offset + fir->decimate_factor > fir->sb_active->nr_samples) {
-        TSL_BUG_IF_FAILED(sample_buf_decref(fir->dthr, fir->sb_active));
+        TSL_BUG_IF_FAILED(sample_buf_decref(fir->sb_active));
         fir->sb_active = fir->sb_next;
         fir->sb_next = NULL;
         fir->sample_offset = (fir->sample_offset + fir->decimate_factor) - fir->sb_active->nr_samples;

@@ -71,11 +71,6 @@ struct direct_fir {
      * The rotation counter.
      */
     unsigned rot_counter;
-
-    /**
-     * The thread state that this FIR is attached to
-     */
-    struct demod_thread *dthr;
 };
 
 /**
@@ -86,7 +81,6 @@ struct direct_fir {
  * \param fir_real_coeff The real coefficients for the FIR
  * \param fir_imag_coeff The imaginary coefficients for the FIR
  * \param decimation_factor The decimation factor to apply
- * \param dthr The demodulator thread that has the sample buffer allocator handle.
  * \param derotate Set to `true` if you wish to apply a derotator. Useful if the filter will
  *                 shift a signal to baseband.
  * \param sampling_rate The sampling rate. Used to manage the phase derotator. Ignored if not
@@ -97,7 +91,7 @@ struct direct_fir {
  * \return A_OK on success, an error code otherwise
  */
 aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_t *fir_real_coeff,
-        const int16_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,
+        const int16_t *fir_imag_coeff, unsigned decimation_factor,
         bool derotate, uint32_t sampling_rate, int32_t freq_shift);
 
 /**

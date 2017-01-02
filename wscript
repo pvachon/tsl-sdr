@@ -236,7 +236,7 @@ def build(bld):
 	#MultiFM
 	bld.program(
 		source	= bld.path.ant_glob('multifm/*.c'),
-		use		= ['app', 'config', 'tsl', 'rtlsdr'],
+		use		= ['app', 'config', 'tsl', 'filter', 'rtlsdr'],
 		target	= os.path.join(binPath, 'multifm'),
 		name	= 'multifm',
 	)
@@ -271,6 +271,35 @@ def build(bld):
 		use      = ['config', 'test', 'tsl'],
 		target   = os.path.join(testPath, 'test_config'),
 		name     = 'test_config',
+	)
+
+	# Filter Library
+	bld.stlib(
+		source   = bld.path.ant_glob('filter/*.c'),
+		use      = ['tsl'],
+		target   = os.path.join(libPath, 'filter'),
+		name     = 'filter',
+	)
+	bld.program(
+		source   = bld.path.ant_glob('filter/test/*.c'),
+		use      = ['config', 'test', 'tsl', 'filter'],
+		target   = os.path.join(testPath, 'test_filter'),
+		name     = 'test_filter',
+	)
+
+
+	# Pager
+	bld.stlib(
+		source   = bld.path.ant_glob('pager/*.c'),
+		use      = ['tsl', 'config'],
+		target   = os.path.join(libPath, 'pager'),
+		name     = 'pager',
+	)
+	bld.program(
+		source   = bld.path.ant_glob('pager/test/*.c'),
+		use      = ['pager', 'config', 'test', 'tsl'],
+		target   = os.path.join(testPath, 'test_pager'),
+		name     = 'test_pager',
 	)
 
 	#test
