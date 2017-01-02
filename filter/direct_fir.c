@@ -1,5 +1,7 @@
+#include <filter/filter.h>
 #include <filter/direct_fir.h>
 #include <filter/sample_buf.h>
+#include <filter/complex.h>
 
 #include <tsl/errors.h>
 #include <tsl/assert.h>
@@ -9,9 +11,6 @@
 #include <string.h>
 #include <math.h>
 #include <complex.h>
-
-#define Q_15_SHIFT          14
-#define DEROTATOR_RESET     512
 
 #if defined(_USE_ARM_NEON)
 /* Use ARM NEON because configuration told us to */
@@ -124,6 +123,9 @@ done:
     return ret;
 }
 
+/**
+ * Perform a phase derotation for the current sample.
+ */
 static
 aresult_t _direct_fir_apply_derotation(struct direct_fir *fir, int32_t acc_re_in, int32_t acc_im_in,
         int32_t *acc_re_out, int32_t *acc_im_out)
@@ -134,19 +136,13 @@ aresult_t _direct_fir_apply_derotation(struct direct_fir *fir, int32_t acc_re_in
     TSL_ASSERT_ARG_DEBUG(NULL != acc_re_out);
     TSL_ASSERT_ARG_DEBUG(NULL != acc_im_out);
 
-    /* Apply the phase derotation */
-    int32_t z_re = acc_re_in * fir->rot_phase_re - acc_im_in * fir->rot_phase_im,
-            z_im = acc_re_in * fir->rot_phase_im + acc_im_in * fir->rot_phase_re;
+    /* Apply the phase derotation to the sample */
+    cmul_q15_q30(acc_re_in, acc_im_in, fir->rot_phase_re, fir->rot_phase_im,
+            acc_re_out, acc_im_out);
 
-    *acc_re_out = z_re;
-    *acc_im_out = z_im;
-
-    int32_t ph_re = fir->rot_phase_re * fir->rot_phase_incr_re - fir->rot_phase_im * fir->rot_phase_incr_im,
-            ph_im = fir->rot_phase_im * fir->rot_phase_incr_re + fir->rot_phase_re * fir->rot_phase_incr_im;
-
-    /* Update the phase term */
-    fir->rot_phase_re = ph_re >> Q_15_SHIFT;
-    fir->rot_phase_im = ph_im >> Q_15_SHIFT;
+    /* Now add the phase rotation increment to the phase rotation for the next sample */
+    cmul_q15_q15(fir->rot_phase_re, fir->rot_phase_im, fir->rot_phase_incr_re, fir->rot_phase_incr_im,
+            &fir->rot_phase_re, &fir->rot_phase_im);
 
     fir->rot_counter++;
 
@@ -258,8 +254,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
                     f_im = 0;
 
             /* Filter the sample */
-            f_re = c_re * s_re - c_im * s_im;
-            f_im = c_re * s_im + c_im * s_re;
+            cmul_q15_q30(c_re, c_im, s_re, s_im, &f_re, &f_im);
 
             /* Accumulate the sample */
             acc_re += f_re;
@@ -362,8 +357,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
                     f_im = 0;
 
             /* Filter the sample */
-            f_re = c_re * s_re - c_im * s_im;
-            f_im = c_re * s_im + c_im * s_re;
+            cmul_q15_q30(c_re, c_im, s_re, s_im, &f_re, &f_im);
 
             /* Accumulate the sample */
             acc_re += f_re;

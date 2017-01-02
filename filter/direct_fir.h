@@ -50,22 +50,22 @@ struct direct_fir {
     /**
      * The real part of the Q.15 rotation phase increment
      */
-    int32_t rot_phase_incr_re;
+    int16_t rot_phase_incr_re;
 
     /**
      * The imaginary part of the Q.15 rotaiton phase increment
      */
-    int32_t rot_phase_incr_im;
+    int16_t rot_phase_incr_im;
 
     /**
      * The real part of the Q.15 rotation factor to be applied to each sample
      */
-    int32_t rot_phase_re;
+    int16_t rot_phase_re;
 
     /**
      * The imaginary part of the Q.15 rotation factor to be applied to each sample
      */
-    int32_t rot_phase_im;
+    int16_t rot_phase_im;
 
     /**
      * The rotation counter.

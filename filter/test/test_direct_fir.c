@@ -23,4 +23,3 @@ TEST_DECLARE_UNIT(test_smoke, flex)
 
 TEST_DECLARE_SUITE(flex, test_direct_fir_cleanup, test_direct_fir_setup, NULL, NULL);
 
-

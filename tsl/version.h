@@ -39,3 +39,4 @@
  * Returns the version string (which includes revision information).
  */
 const char *tsl_get_version(void);
+
