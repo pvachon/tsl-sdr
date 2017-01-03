@@ -342,6 +342,9 @@ aresult_t rtl_sdr_worker_thread_new(
             MFM_MSG(SEV_ERROR, "NO-RESAMPLE-TAPS", "Rational resampler filter taps must not be empty or there must be enough taps to perform an interpolation.");
             goto done;
         }
+
+        MFM_MSG(SEV_INFO, "RATIONAL-RESAMPLER", "Using Rational Resampler with to resample the output rate to %d/%d with %zu taps in filter.",
+                resample_interpolate, resample_decimate, nr_resample_filter_taps);
     }
 
     /* Figure out which RTL-SDR device we want. */
