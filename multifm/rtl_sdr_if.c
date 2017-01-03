@@ -251,7 +251,8 @@ aresult_t rtl_sdr_worker_thread_new(
     aresult_t ret = A_OK;
 
     struct config channel = CONFIG_INIT_EMPTY,
-                  channels = CONFIG_INIT_EMPTY;
+                  channels = CONFIG_INIT_EMPTY,
+                  rational_resampler = CONFIG_INIT_EMPTY;
     struct rtl_sdr_thread *thr = NULL;
     struct rtlsdr_dev *dev = NULL;
     const char *rtl_dump_file = NULL;
@@ -260,11 +261,15 @@ aresult_t rtl_sdr_worker_thread_new(
         ppm_corr = 0,
         rtl_ret = 0,
         decimation_factor = 0,
-        dump_file_fd = -1;
+        dump_file_fd = -1,
+        resample_decimate = 0,
+        resample_interpolate = 0;
     size_t arr_ctr = 0,
-           lpf_nr_taps = 0;
+           lpf_nr_taps = 0,
+           nr_resample_filter_taps = 0;
     bool test_mode = false;
-    double *lpf_taps = NULL;
+    double *lpf_taps = NULL,
+           *resample_filter_taps = NULL;
     double gain_db = 0.0;
 
 
@@ -299,6 +304,44 @@ aresult_t rtl_sdr_worker_thread_new(
         MFM_MSG(SEV_ERROR, "INSUFF-FILTER-TAPS", "Not enough filter taps for the low-pass filter.");
         ret = A_E_INVAL;
         goto done;
+    }
+
+    /* Grab the rational resampler taps, if appropriate */
+    if (!FAILED(config_get(cfg, &rational_resampler, "rationalResampler"))) {
+        DIAG("Preparing the rational resampler.");
+
+        if (FAILED(ret = config_get_integer(&rational_resampler, &resample_decimate, "decimate"))) {
+            MFM_MSG(SEV_ERROR, "MISSING-DECIMATE", "Need to specify the decimation factor for the rational resampler.");
+            goto done;
+        }
+
+        if (0 >= resample_decimate) {
+            ret = A_E_INVAL;
+            MFM_MSG(SEV_ERROR, "BAD-DECIMATION-FACTOR", "The decimation factor for the rational resampler must be a non-zero positive integer.");
+            goto done;
+        }
+
+        if (FAILED(ret = config_get_integer(&rational_resampler, &resample_interpolate, "interpolate"))) {
+            MFM_MSG(SEV_ERROR, "MISSING-INTERPOLATE", "Need to specify the interpolation factor for the rational resampler.");
+            goto done;
+        }
+
+        if (0 >= resample_interpolate) {
+            ret = A_E_INVAL;
+            MFM_MSG(SEV_ERROR, "BAD-INTERPOLATION-FACTOR", "The interpolation factor for the rational resampler must be a non-zero positive integer.");
+            goto done;
+        }
+
+        if (FAILED(ret = config_get_float_array(&rational_resampler, &resample_filter_taps, &nr_resample_filter_taps, "filterCoefficients"))) {
+            MFM_MSG(SEV_ERROR, "MISSING-RESAMPLE-FILTER-COEFF", "Missing filter coefficients for the resampling filter.");
+            goto done;
+        }
+
+        if (0 == nr_resample_filter_taps || resample_interpolate > nr_resample_filter_taps) {
+            ret = A_E_INVAL;
+            MFM_MSG(SEV_ERROR, "NO-RESAMPLE-TAPS", "Rational resampler filter taps must not be empty or there must be enough taps to perform an interpolation.");
+            goto done;
+        }
     }
 
     /* Figure out which RTL-SDR device we want. */
@@ -426,7 +469,9 @@ aresult_t rtl_sdr_worker_thread_new(
 
         /* Create demodulator thread object */
         if (FAILED(demod_thread_new(&dmt, -1, (int32_t)nb_center_freq - center_freq,
-                        sample_rate, fifo_name, decimation_factor, lpf_taps, lpf_nr_taps)))
+                        sample_rate, fifo_name, decimation_factor, lpf_taps, lpf_nr_taps,
+                        resample_decimate, resample_interpolate, resample_filter_taps,
+                        nr_resample_filter_taps)))
         {
             MFM_MSG(SEV_ERROR, "FAILED-DEMOD-THREAD", "Failed to create demodulator thread, aborting.");
             goto done;

@@ -22,7 +22,7 @@
  * \return A_OK on success, an error code otherwise.
  */
 aresult_t polyphase_fir_new(struct polyphase_fir **pfir, size_t nr_coeffs, const int16_t *fir_coeff,
-        unsigned interpolate, unsigned decimate)
+            unsigned interpolate, unsigned decimate)
 {
     aresult_t ret = A_OK;
 
@@ -131,7 +131,8 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
 {
     aresult_t ret = A_OK;
 
-    size_t phase_id = 0;
+    size_t phase_id = 0,
+           nr_consumed = 0;
 
     TSL_ASSERT_ARG(NULL != fir);
     TSL_ASSERT_ARG(NULL != out_buf);
@@ -144,11 +145,11 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
         goto done;
     }
 
-    for (size_t i = 0; i < nr_out_samples; i++) {
+    for (size_t i = 0; i < nr_out_samples && fir->nr_samples < fir->nr_filter_coeffs; i++) {
         aresult_t filt_ret = dot_product_sample_buffers_real(
                 fir->sb_active,
                 fir->sb_next,
-                i, /* TODO: offset in sb_active */
+                fir->sample_offset,
                 &fir->phase_filters[fir->nr_filter_coeffs * phase_id],
                 fir->nr_filter_coeffs,
                 &out_buf[i]);
@@ -159,7 +160,26 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
             goto done;
         }
 
-        /* TODO: Calculate the next phase to be processed */
+        /* Calculate the next phase to process */
+        phase_id +=  fir->decimation;
+
+        size_t interp_phase = phase_id / fir->interpolation;
+        phase_id -= interp_phase * fir->interpolation;
+        nr_consumed += interp_phase;
+        fir->nr_samples -= interp_phase;
+
+        /* Check if we're going to need to update the active buffer */
+        if (fir->sample_offset + interp_phase > fir->sb_active->nr_samples) {
+            /* Retire the active buffer, shift next to active */
+            size_t old_nr_samples = fir->sb_active->nr_samples;
+            TSL_BUG_IF_FAILED(sample_buf_decref(fir->sb_active));
+            fir->sb_active = fir->sb_next;
+            fir->sb_next = NULL;
+            fir->sample_offset = fir->sample_offset + interp_phase - old_nr_samples;
+        } else {
+            /* Continue walking the current buffer */
+            fir->sample_offset += interp_phase;
+        }
     }
 
     *nr_out_samples_generated = nr_out_samples;

@@ -10,6 +10,8 @@
 
 #define LPF_PCM_OUTPUT_LEN              1024
 
+struct polyphase_fir;
+
 /**
  * Demodulator thread context
  */
@@ -23,6 +25,11 @@ struct demod_thread {
      * The FIR filter being applied by this thread (usually for baseband selection)
      */
     struct direct_fir fir;
+
+    /**
+     * An optional polyphase resampler.
+     */
+    struct polyphase_fir *pfir;
 
     /**
      * The file descriptor for the output FIFO
@@ -95,5 +102,7 @@ struct demod_thread {
 aresult_t demod_thread_delete(struct demod_thread **pthr);
 aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
-        double *lpf_taps, size_t lpf_nr_taps);
+        const double *lpf_taps, size_t lpf_nr_taps,
+        unsigned resample_decimate, unsigned resample_interpolate, const double *resample_filter_taps,
+        size_t nr_resample_filter_taps);
 

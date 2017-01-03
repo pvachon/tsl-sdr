@@ -49,7 +49,7 @@
 
 #define verbprintf(n, s, ...) PAG_MSG(SEV_INFO, "FLEX", s, ##__VA_ARGS__)
 
-enum Flex_PageTypeEnum {
+enum flex_page_type {
     FLEX_PAGETYPE_SECURE,
     FLEX_PAGETYPE_UNKNOWN,
     FLEX_PAGETYPE_TONE,
@@ -60,7 +60,7 @@ enum Flex_PageTypeEnum {
     FLEX_PAGETYPE_NUMBERED_NUMERIC
 };
 
-enum Flex_StateEnum {
+enum flex_state {
     FLEX_STATE_SYNC1,
     FLEX_STATE_FIW,
     FLEX_STATE_SYNC2,
@@ -93,8 +93,8 @@ struct Flex_State {
     unsigned int                sync2_count;
     unsigned int                data_count;
     unsigned int                fiwcount;
-    enum Flex_StateEnum         Current;
-    enum Flex_StateEnum         Previous;
+    enum flex_state         Current;
+    enum flex_state         Previous;
 };
 
 struct Flex_Sync {
@@ -128,7 +128,7 @@ struct Flex_Data {
 };
 
 struct Flex_Decode {
-    enum Flex_PageTypeEnum      type;
+    enum flex_page_type      type;
     int                         long_address;
     int32_t                     capcode;
     struct bch_code *            bch_code;
@@ -508,8 +508,7 @@ void decode_phase(struct Flex * flex, char PhaseNo)
         case 'C': phaseptr=flex->Data.PhaseC.buf; break;
         case 'D': phaseptr=flex->Data.PhaseD.buf; break;
     }
-    int i, j;
-    for (i=0; i<88; i++) {
+    for (int i=0; i<88; i++) {
         int decode_error=bch3121_fix_errors(flex, &phaseptr[i], PhaseNo);
 
         if (decode_error) {
@@ -537,8 +536,8 @@ void decode_phase(struct Flex * flex, char PhaseNo)
     verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW:%02i-%02i (%i pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
 
     // Iterate through pages and dispatch to appropriate handler
-    for (i = aoffset; i < voffset; i++) {
-        j = voffset+i-aoffset;      // Start of vector field for address @ i
+    for (int i = aoffset; i < voffset; i++) {
+        int j = voffset+i-aoffset;      // Start of vector field for address @ i
 
         if (phaseptr[i] == 0x00000000 ||
                 phaseptr[i] == 0x001FFFFF) {
@@ -1010,13 +1009,13 @@ void flex_delete(struct Flex * flex)
 }
 
 static
-struct Flex * flex_new(unsigned int SampleFrequency)
+struct Flex * flex_new(unsigned int sample_rate)
 {
     struct Flex *flex=(struct Flex *)malloc(sizeof(struct Flex));
     if (flex!=NULL) {
         memset(flex, 0, sizeof(struct Flex));
 
-        flex->Demodulator.sample_freq=SampleFrequency;
+        flex->Demodulator.sample_freq=sample_rate;
         // The baud rate of first syncword and FIW is always 1600, so set that
         // rate to start.
         flex->Demodulator.baud = 1600;

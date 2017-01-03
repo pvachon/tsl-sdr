@@ -3,6 +3,7 @@
 
 #include <filter/direct_fir.h>
 #include <filter/sample_buf.h>
+#include <filter/polyphase_fir.h>
 
 #include <tsl/frame_alloc.h>
 #include <tsl/errors.h>
@@ -179,7 +180,7 @@ aresult_t demod_thread_delete(struct demod_thread **pthr)
  * \return A_OK on success, an error code otherwise
  */
 static
-aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t lpf_nr_taps, int32_t offset_hz, uint32_t sample_rate, int decimation)
+aresult_t _demod_fir_prepare(struct demod_thread *thr, const double *lpf_taps, size_t lpf_nr_taps, int32_t offset_hz, uint32_t sample_rate, int decimation)
 {
     aresult_t ret = A_OK;
 
@@ -247,7 +248,9 @@ done:
 
 aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
-        double *lpf_taps, size_t lpf_nr_taps)
+        const double *lpf_taps, size_t lpf_nr_taps,
+        unsigned resample_decimate, unsigned resample_interpolate, const double *resample_filter_taps,
+        size_t nr_resample_filter_taps)
 {
     aresult_t ret = A_OK;
 
@@ -258,6 +261,11 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
     TSL_ASSERT_ARG(0 != decimation_factor);
     TSL_ASSERT_ARG(NULL != lpf_taps);
     TSL_ASSERT_ARG(0 != lpf_nr_taps);
+
+    if (0 != resample_decimate && 0 != resample_interpolate) {
+        TSL_ASSERT_ARG(NULL != resample_filter_taps);
+        TSL_ASSERT_ARG(0 != nr_resample_filter_taps);
+    }
 
     *pthr = NULL;
 
@@ -286,6 +294,8 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
     if (FAILED(ret = _demod_fir_prepare(thr, lpf_taps, lpf_nr_taps, offset_hz, samp_hz, decimation_factor))) {
         goto done;
     }
+
+    /* If applicable, initialize the polyphase rational resampler */
 
     /* Open the output FIFO */
     if (0 > (thr->fifo_fd = open(out_fifo, O_WRONLY))) {

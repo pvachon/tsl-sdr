@@ -62,5 +62,10 @@ struct polyphase_fir {
      * The total number of samples contained in this polyphase FIR
      */
     size_t nr_samples;
+
+    /**
+     * The next sample to be processed, relative to the start of sb_active.
+     */
+    size_t sample_offset;
 };
 
