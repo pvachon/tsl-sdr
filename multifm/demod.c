@@ -4,6 +4,7 @@
 #include <filter/direct_fir.h>
 #include <filter/sample_buf.h>
 #include <filter/polyphase_fir.h>
+#include <filter/complex.h>
 
 #include <tsl/frame_alloc.h>
 #include <tsl/errors.h>

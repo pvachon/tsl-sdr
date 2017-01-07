@@ -9,13 +9,9 @@
 
 #include <tsl/assert.h>
 #include <tsl/diag.h>
-#include <tsl/safe_alloc.h>
 #include <tsl/errors.h>
-#include <tsl/worker_thread.h>
 #include <tsl/frame_alloc.h>
-#include <tsl/work_queue.h>
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <complex.h>
 

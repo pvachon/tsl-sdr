@@ -293,12 +293,13 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
         acc_re >>= Q_15_SHIFT;
         acc_im >>= Q_15_SHIFT;
 
-        TSL_BUG_IF_FAILED(_direct_fir_apply_derotation(fir, acc_re, acc_im, &acc_re, &acc_im));
+        TSL_BUG_IF_FAILED(_direct_fir_apply_derotation(fir, round_q30_q15(acc_re), round_q32_q15(acc_im),
+                    &acc_re, &acc_im));
     }
 
     /* Return the computed sample, in Q.15 (currently in Q.30 due to the prior multiplication) */
-    *psample_real = acc_re >> Q_15_SHIFT;
-    *psample_imag = acc_im >> Q_15_SHIFT;
+    *psample_real = round_q30_q15(acc_re);
+    *psample_imag = round_q30_q15(acc_im);
 
 done:
     return ret;

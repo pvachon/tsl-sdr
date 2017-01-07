@@ -29,6 +29,11 @@ enum sample_type {
     COMPLEX_UINT_16     = 2,
 
     /**
+     * Samples are complex signed 16-bit integers
+     */
+    COMPLEX_INT_16      = 3,
+
+    /**
      * Samples are real unsigned 32-bit integers
      */
     REAL_UINT_32        = 4,
