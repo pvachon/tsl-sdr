@@ -44,7 +44,7 @@ struct polyphase_fir *pfir = NULL;
 static
 void _usage(const char *appname)
 {
-    RES_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -S [sample rate] [in_fifo] [out_fifo]",
+    RES_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -S [sample rate] [in_fifo] [out_fifo]",
             appname);
     exit(EXIT_SUCCESS);
 }
@@ -57,7 +57,7 @@ void _set_options(int argc, char * const argv[])
     struct config *cfg CAL_CLEANUP(config_delete) = NULL;
     double *filter_coeffs_f = NULL;
 
-    while ((arg = getopt(argc, argv, "I:D:S:F:h"))) {
+    while ((arg = getopt(argc, argv, "I:D:S:F:h")) != -1) {
         switch (arg) {
         case 'I':
             interpolate = strtoll(optarg, NULL, 0);
@@ -110,6 +110,7 @@ void _set_options(int argc, char * const argv[])
     }
 
     TSL_BUG_IF_FAILED(config_get_float_array(cfg, &filter_coeffs_f, &nr_filter_coeffs, "lpfCoeffs"));
+    TSL_BUG_IF_FAILED(TCALLOC((void **)&filter_coeffs, sizeof(int16_t) * nr_filter_coeffs, 1ul));
 
     for (size_t i = 0; i < nr_filter_coeffs; i++) {
         double q15 = 1 << Q_15_SHIFT;
