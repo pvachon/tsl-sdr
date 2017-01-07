@@ -122,7 +122,7 @@ void _set_options(int argc, char * const argv[])
         exit(EXIT_FAILURE);
     }
 
-    if (0 > (out_fifo = open(argv[optind + 1], O_RDONLY))) {
+    if (0 > (out_fifo = open(argv[optind + 1], O_WRONLY))) {
         RES_MSG(SEV_INFO, "BAD-OUTPUT", "Bad output - cannot open %s", argv[optind + 1]);
         exit(EXIT_FAILURE);
     }
