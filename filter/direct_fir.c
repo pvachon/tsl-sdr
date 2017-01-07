@@ -1,5 +1,7 @@
-#include <multifm/direct_fir.h>
-#include <multifm/sambuf.h>
+#include <filter/filter.h>
+#include <filter/direct_fir.h>
+#include <filter/sample_buf.h>
+#include <filter/complex.h>
 
 #include <tsl/errors.h>
 #include <tsl/assert.h>
@@ -10,9 +12,6 @@
 #include <math.h>
 #include <complex.h>
 
-#define Q_15_SHIFT          14
-#define DEROTATOR_RESET     512
-
 #if defined(_USE_ARM_NEON)
 /* Use ARM NEON because configuration told us to */
 #define _NEON_FIR_IMPLEMENTATION
@@ -21,7 +20,7 @@
 #endif /* determine which FIR implementation to use */
 
 aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_t *fir_real_coeff,
-        const int16_t *fir_imag_coeff, unsigned decimation_factor, struct demod_thread *dthr,
+        const int16_t *fir_imag_coeff, unsigned decimation_factor,
         bool derotate, uint32_t sampling_rate, int32_t freq_shift)
 {
     aresult_t ret = A_OK;
@@ -31,7 +30,6 @@ aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_
     TSL_ASSERT_ARG(NULL != fir_real_coeff);
     TSL_ASSERT_ARG(NULL != fir_imag_coeff);
     TSL_ASSERT_ARG(0 != decimation_factor);
-    TSL_ASSERT_ARG(NULL != dthr);
 
     DIAG("FIR: Preparing %zu coefficients, decimation by %u, with%s derotation, sampling rate = %u frequency_shift = %d",
             nr_coeffs, decimation_factor, true == derotate ? "" : "out", sampling_rate, freq_shift);
@@ -44,7 +42,6 @@ aresult_t direct_fir_init(struct direct_fir *fir, size_t nr_coeffs, const int16_
     memcpy(fir->fir_imag_coeff, fir_imag_coeff, nr_coeffs * sizeof(int16_t));
 
     fir->decimate_factor = decimation_factor;
-    fir->dthr = dthr;
     fir->nr_coeffs = nr_coeffs;
 
     fir->rot_phase_re = 0;
@@ -82,16 +79,15 @@ aresult_t direct_fir_cleanup(struct direct_fir *fir)
     }
 
     if (NULL != fir->sb_active) {
-        sample_buf_decref(fir->dthr, fir->sb_active);
+        sample_buf_decref(fir->sb_active);
         fir->sb_active = NULL;
     }
 
     if (NULL != fir->sb_next) {
-        sample_buf_decref(fir->dthr, fir->sb_next);
+        sample_buf_decref(fir->sb_next);
         fir->sb_next = NULL;
     }
 
-    fir->dthr = NULL;
     fir->decimate_factor = 0;
 
     return ret;
@@ -127,6 +123,9 @@ done:
     return ret;
 }
 
+/**
+ * Perform a phase derotation for the current sample.
+ */
 static
 aresult_t _direct_fir_apply_derotation(struct direct_fir *fir, int32_t acc_re_in, int32_t acc_im_in,
         int32_t *acc_re_out, int32_t *acc_im_out)
@@ -137,19 +136,13 @@ aresult_t _direct_fir_apply_derotation(struct direct_fir *fir, int32_t acc_re_in
     TSL_ASSERT_ARG_DEBUG(NULL != acc_re_out);
     TSL_ASSERT_ARG_DEBUG(NULL != acc_im_out);
 
-    /* Apply the phase derotation */
-    int32_t z_re = acc_re_in * fir->rot_phase_re - acc_im_in * fir->rot_phase_im,
-            z_im = acc_re_in * fir->rot_phase_im + acc_im_in * fir->rot_phase_re;
+    /* Apply the phase derotation to the sample */
+    cmul_q15_q30(acc_re_in, acc_im_in, fir->rot_phase_re, fir->rot_phase_im,
+            acc_re_out, acc_im_out);
 
-    *acc_re_out = z_re;
-    *acc_im_out = z_im;
-
-    int32_t ph_re = fir->rot_phase_re * fir->rot_phase_incr_re - fir->rot_phase_im * fir->rot_phase_incr_im,
-            ph_im = fir->rot_phase_im * fir->rot_phase_incr_re + fir->rot_phase_re * fir->rot_phase_incr_im;
-
-    /* Update the phase term */
-    fir->rot_phase_re = ph_re >> Q_15_SHIFT;
-    fir->rot_phase_im = ph_im >> Q_15_SHIFT;
+    /* Now add the phase rotation increment to the phase rotation for the next sample */
+    cmul_q15_q15(fir->rot_phase_re, fir->rot_phase_im, fir->rot_phase_incr_re, fir->rot_phase_incr_im,
+            &fir->rot_phase_re, &fir->rot_phase_im);
 
     fir->rot_counter++;
 
@@ -261,8 +254,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
                     f_im = 0;
 
             /* Filter the sample */
-            f_re = c_re * s_re - c_im * s_im;
-            f_im = c_re * s_im + c_im * s_re;
+            cmul_q15_q30(c_re, c_im, s_re, s_im, &f_re, &f_im);
 
             /* Accumulate the sample */
             acc_re += f_re;
@@ -284,7 +276,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
     if (fir->sample_offset + fir->decimate_factor >= fir->sb_active->nr_samples) {
         size_t cur_nr_samples = fir->sb_active->nr_samples;
 
-        TSL_BUG_IF_FAILED(sample_buf_decref(fir->dthr, fir->sb_active));
+        TSL_BUG_IF_FAILED(sample_buf_decref(fir->sb_active));
 
         fir->sb_active = fir->sb_next;
         fir->sb_next = NULL;
@@ -301,12 +293,13 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
         acc_re >>= Q_15_SHIFT;
         acc_im >>= Q_15_SHIFT;
 
-        TSL_BUG_IF_FAILED(_direct_fir_apply_derotation(fir, acc_re, acc_im, &acc_re, &acc_im));
+        TSL_BUG_IF_FAILED(_direct_fir_apply_derotation(fir, round_q30_q15(acc_re), round_q32_q15(acc_im),
+                    &acc_re, &acc_im));
     }
 
     /* Return the computed sample, in Q.15 (currently in Q.30 due to the prior multiplication) */
-    *psample_real = acc_re >> Q_15_SHIFT;
-    *psample_imag = acc_im >> Q_15_SHIFT;
+    *psample_real = round_q30_q15(acc_re);
+    *psample_imag = round_q30_q15(acc_im);
 
 done:
     return ret;
@@ -365,8 +358,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
                     f_im = 0;
 
             /* Filter the sample */
-            f_re = c_re * s_re - c_im * s_im;
-            f_im = c_re * s_im + c_im * s_re;
+            cmul_q15_q30(c_re, c_im, s_re, s_im, &f_re, &f_im);
 
             /* Accumulate the sample */
             acc_re += f_re;
@@ -381,7 +373,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
 
     /* Check if the next sample will start in the following buffer; if so, move along */
     if (fir->sample_offset + fir->decimate_factor > fir->sb_active->nr_samples) {
-        TSL_BUG_IF_FAILED(sample_buf_decref(fir->dthr, fir->sb_active));
+        TSL_BUG_IF_FAILED(sample_buf_decref(fir->sb_active));
         fir->sb_active = fir->sb_next;
         fir->sb_next = NULL;
         fir->sample_offset = (fir->sample_offset + fir->decimate_factor) - fir->sb_active->nr_samples;

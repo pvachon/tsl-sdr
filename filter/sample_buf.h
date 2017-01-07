@@ -1,13 +1,50 @@
 #pragma once
 
-#include <multifm/types.h>
+#include <filter/filter.h>
 
 #include <tsl/cal.h>
 #include <tsl/result.h>
 
 #include <stdint.h>
 
-struct demod_thread;
+struct sample_buf;
+
+/**
+ * The sample representation contained in the given sample buffer
+ */
+enum sample_type {
+    /**
+     * Unknown sample representation
+     */
+    UNKNOWN             = 0,
+
+    /**
+     * Samples are real unsigned 16-bit integers
+     */
+    REAL_UINT_16        = 1,
+
+    /**
+     * Samples are complex unsigned 16-bit integers
+     */
+    COMPLEX_UINT_16     = 2,
+
+    /**
+     * Samples are complex signed 16-bit integers
+     */
+    COMPLEX_INT_16      = 3,
+
+    /**
+     * Samples are real unsigned 32-bit integers
+     */
+    REAL_UINT_32        = 4,
+
+    /**
+     * Samples are complex unsigned 32-bit integers
+     */
+    COMPLEX_UINT_32     = 5,
+};
+
+typedef aresult_t (*sample_buf_release_func_t)(struct sample_buf *buf);
 
 /**
  * A sample buffer. Represents a count of samples, with the specified
@@ -48,10 +85,21 @@ struct sample_buf {
     uint64_t start_time_ns;
 
     /**
+     * Pointer to the function that will be called to release the sample buffer once the reference
+     * count reaches 0.
+     */
+    sample_buf_release_func_t release;
+
+    /**
+     * Private state an application can attach to the sample buffer.
+     */
+    void *priv;
+
+    /**
      * The actual data. This will need to be cast appropriately.
      */
     uint8_t data_buf[];
 };
 
-aresult_t sample_buf_decref(struct demod_thread *thr, struct sample_buf *buf);
+aresult_t sample_buf_decref(struct sample_buf *buf);
 

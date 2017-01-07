@@ -1,7 +1,7 @@
 #include <multifm/multifm.h>
-#include <multifm/sambuf.h>
-#include <multifm/direct_fir.h>
 #include <multifm/rtl_sdr_if.h>
+
+#include <filter/sample_buf.h>
 
 #include <config/engine.h>
 
@@ -9,13 +9,9 @@
 
 #include <tsl/assert.h>
 #include <tsl/diag.h>
-#include <tsl/safe_alloc.h>
 #include <tsl/errors.h>
-#include <tsl/worker_thread.h>
 #include <tsl/frame_alloc.h>
-#include <tsl/work_queue.h>
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <complex.h>
 

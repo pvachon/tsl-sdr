@@ -1,7 +1,10 @@
 #include <multifm/demod.h>
-#include <multifm/direct_fir.h>
-#include <multifm/sambuf.h>
 #include <multifm/multifm.h>
+
+#include <filter/direct_fir.h>
+#include <filter/sample_buf.h>
+#include <filter/polyphase_fir.h>
+#include <filter/complex.h>
 
 #include <tsl/frame_alloc.h>
 #include <tsl/errors.h>
@@ -20,21 +23,6 @@
 #endif
 
 #define Q_15_SHIFT                      14
-
-aresult_t sample_buf_decref(struct demod_thread *thr, struct sample_buf *buf)
-{
-    aresult_t ret = A_OK;
-
-    TSL_ASSERT_ARG(NULL != thr);
-    TSL_ASSERT_ARG(NULL != buf);
-
-    /* Decrement the reference count */
-    if (1 == atomic_fetch_sub(&buf->refcount, 1)) {
-        TSL_BUG_IF_FAILED(frame_free(thr->samp_buf_alloc, (void **)&buf));
-    }
-
-    return ret;
-}
 
 static
 aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbuf)
@@ -189,7 +177,7 @@ aresult_t demod_thread_delete(struct demod_thread **pthr)
  * \return A_OK on success, an error code otherwise
  */
 static
-aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t lpf_nr_taps, int32_t offset_hz, uint32_t sample_rate, int decimation)
+aresult_t _demod_fir_prepare(struct demod_thread *thr, const double *lpf_taps, size_t lpf_nr_taps, int32_t offset_hz, uint32_t sample_rate, int decimation)
 {
     aresult_t ret = A_OK;
 
@@ -245,7 +233,7 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, double *lpf_taps, size_t 
 #endif /* defined(_DUMP_LPF) */
 
     /* Create a Direct Type FIR implementation */
-    TSL_BUG_IF_FAILED(direct_fir_init(&thr->fir, lpf_nr_taps, coeffs, &coeffs[base], decimation, thr, true, sample_rate, offset_hz));
+    TSL_BUG_IF_FAILED(direct_fir_init(&thr->fir, lpf_nr_taps, coeffs, &coeffs[base], decimation, true, sample_rate, offset_hz));
 
 done:
     if (NULL != coeffs) {
@@ -255,20 +243,26 @@ done:
     return ret;
 }
 
-aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id, struct frame_alloc *samp_buf_alloc,
+aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
-        double *lpf_taps, size_t lpf_nr_taps)
+        const double *lpf_taps, size_t lpf_nr_taps,
+        unsigned resample_decimate, unsigned resample_interpolate, const double *resample_filter_taps,
+        size_t nr_resample_filter_taps)
 {
     aresult_t ret = A_OK;
 
     struct demod_thread *thr = NULL;
 
     TSL_ASSERT_ARG(NULL != pthr);
-    TSL_ASSERT_ARG(NULL != samp_buf_alloc);
     TSL_ASSERT_ARG(NULL != out_fifo && '\0' != *out_fifo);
     TSL_ASSERT_ARG(0 != decimation_factor);
     TSL_ASSERT_ARG(NULL != lpf_taps);
     TSL_ASSERT_ARG(0 != lpf_nr_taps);
+
+    if (0 != resample_decimate && 0 != resample_interpolate) {
+        TSL_ASSERT_ARG(NULL != resample_filter_taps);
+        TSL_ASSERT_ARG(0 != nr_resample_filter_taps);
+    }
 
     *pthr = NULL;
 
@@ -298,13 +292,13 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id, struct 
         goto done;
     }
 
+    /* If applicable, initialize the polyphase rational resampler */
+
     /* Open the output FIFO */
     if (0 > (thr->fifo_fd = open(out_fifo, O_WRONLY))) {
         MFM_MSG(SEV_FATAL, "CANT-OPEN-FIFO", "Unable to open output fifo '%s'", out_fifo);
         goto done;
     }
-
-    thr->samp_buf_alloc = samp_buf_alloc;
 
     list_init(&thr->dt_node);
 
