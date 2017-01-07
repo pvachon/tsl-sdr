@@ -180,10 +180,10 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
         nr_computed_samples++;
 
         /* Calculate the next phase to process */
-        phase_id +=  fir->decimation;
+        phase_id += fir->decimation;
 
         interp_phase = phase_id / fir->interpolation;
-        phase_id -= interp_phase * fir->interpolation;
+        phase_id = phase_id % fir->interpolation;
         nr_consumed += interp_phase;
         fir->nr_samples -= interp_phase;
 

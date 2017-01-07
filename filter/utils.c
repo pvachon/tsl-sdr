@@ -78,8 +78,12 @@ aresult_t dot_product_sample_buffers_real(
 
         /* If we iterate through, we'll start at the beginning of the next buffer */
         buf_offset = 0;
-        cur_buf = sb_next;
         coeffs_remain -= nr_samples_in;
+#ifdef _TSL_DEBUG
+        /* Check if we have coefficients remaining to process */
+        TSL_BUG_ON(cur_buf == sb_next && coeffs_remain != 0);
+#endif
+        cur_buf = sb_next;
     } while (coeffs_remain != 0);
 
     /* Return the computed sample, in Q.15 (currently in Q.30 due to the prior multiplications) */
