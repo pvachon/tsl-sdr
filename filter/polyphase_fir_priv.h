@@ -39,6 +39,11 @@ struct polyphase_fir {
     size_t nr_filter_coeffs;
 
     /**
+     * The last phase we processed
+     */
+    size_t last_phase;
+
+    /**
      * The interpolation factor
      */
     unsigned int interpolation;

@@ -241,6 +241,14 @@ def build(bld):
 		name	= 'multifm',
 	)
 
+	# Resampler
+	bld.program(
+		source	= bld.path.ant_glob('resampler/*.c'),
+		use		= ['app', 'config', 'tsl', 'filter'],
+		target	= os.path.join(binPath, 'resampler'),
+		name	= 'resampler',
+	)
+
 	#app
 	appExcl = []
 	if cpuArch == 'armv7l':

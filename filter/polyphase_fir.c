@@ -45,19 +45,27 @@ aresult_t polyphase_fir_new(struct polyphase_fir **pfir, size_t nr_coeffs, const
 
     /* Determine the number of coefficients in each phase */
     phase_coeffs = (nr_coeffs + interpolate - 1)/interpolate;
-    fir->nr_filter_coeffs = phase_coeffs;
 
     /* Round up to nearest 4 */
     phase_coeffs = (phase_coeffs + 3) & ~(4-1);
+    fir->nr_filter_coeffs = phase_coeffs;
 
-    if (FAILED(ret = TACALLOC((void **)fir->phase_filters, interpolate,  phase_coeffs * sizeof(sample_t), SYS_CACHE_LINE_LENGTH))) {
+    if (FAILED(ret = TACALLOC((void **)&fir->phase_filters, interpolate,  phase_coeffs * sizeof(sample_t), SYS_CACHE_LINE_LENGTH))) {
         goto done;
     }
 
     /* Walk the input filter and set the coefficients in the appropriate filter phase */
     for (size_t i = 0; i < nr_coeffs; i++) {
-        fir->phase_filters[(i % interpolate) * phase_coeffs + i / interpolate] = fir_coeff[i];
+        fir->phase_filters[(i % interpolate) * phase_coeffs + (i / interpolate)] = fir_coeff[i];
     }
+
+    for (size_t i = 0; i < fir->nr_phase_filters; i++) {
+        printf("\nPhase %4zu: ", i);
+        for (size_t j = 0; j < fir->nr_filter_coeffs; j++) {
+            printf("%6u ", fir->phase_filters[i * fir->nr_filter_coeffs + j]);
+        }
+    }
+    printf("\n");
 
     /* Bing, and we're done */
     *pfir = fir;
@@ -85,6 +93,8 @@ aresult_t polyphase_fir_delete(struct polyphase_fir **pfir)
     struct polyphase_fir *fir = NULL;
 
     TSL_ASSERT_PTR_BY_REF(pfir);
+
+    fir = *pfir;
 
     if (NULL != fir->phase_filters) {
         TFREE(fir->phase_filters);
@@ -145,7 +155,10 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
         goto done;
     }
 
+    phase_id = fir->last_phase;
+
     for (size_t i = 0; i < nr_out_samples && fir->nr_samples < fir->nr_filter_coeffs; i++) {
+        size_t interp_phase = 0;
         aresult_t filt_ret = dot_product_sample_buffers_real(
                 fir->sb_active,
                 fir->sb_next,
@@ -153,6 +166,7 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
                 &fir->phase_filters[fir->nr_filter_coeffs * phase_id],
                 fir->nr_filter_coeffs,
                 &out_buf[i]);
+
         if (filt_ret == A_E_DONE) {
             *nr_out_samples_generated = i;
             goto done;
@@ -163,7 +177,7 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
         /* Calculate the next phase to process */
         phase_id +=  fir->decimation;
 
-        size_t interp_phase = phase_id / fir->interpolation;
+        interp_phase = phase_id / fir->interpolation;
         phase_id -= interp_phase * fir->interpolation;
         nr_consumed += interp_phase;
         fir->nr_samples -= interp_phase;
@@ -180,6 +194,8 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
             /* Continue walking the current buffer */
             fir->sample_offset += interp_phase;
         }
+
+        fir->last_phase = phase_id;
     }
 
     *nr_out_samples_generated = nr_out_samples;
