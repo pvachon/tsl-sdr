@@ -290,10 +290,7 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
     /* Apply a phase (de)rotation, if appropriate */
     if (!(0 == fir->rot_phase_incr_re && 0 == fir->rot_phase_incr_im)) {
         /* Convert the accumulated sample to Q.15 */
-        acc_re >>= Q_15_SHIFT;
-        acc_im >>= Q_15_SHIFT;
-
-        TSL_BUG_IF_FAILED(_direct_fir_apply_derotation(fir, round_q30_q15(acc_re), round_q32_q15(acc_im),
+        TSL_BUG_IF_FAILED(_direct_fir_apply_derotation(fir, round_q30_q15(acc_re), round_q30_q15(acc_im),
                     &acc_re, &acc_im));
     }
 

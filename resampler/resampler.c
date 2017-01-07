@@ -110,7 +110,7 @@ void _set_options(int argc, char * const argv[])
     }
 
     TSL_BUG_IF_FAILED(config_get_float_array(cfg, &filter_coeffs_f, &nr_filter_coeffs, "lpfCoeffs"));
-    TSL_BUG_IF_FAILED(TCALLOC((void **)&filter_coeffs, sizeof(int16_t) * nr_filter_coeffs, 1ul));
+    TSL_BUG_IF_FAILED(TCALLOC((void **)&filter_coeffs, sizeof(int16_t) * nr_filter_coeffs, (size_t)1));
 
     for (size_t i = 0; i < nr_filter_coeffs; i++) {
         double q15 = 1 << Q_15_SHIFT;

@@ -26,7 +26,7 @@
 /**
  * A somewhat sanity-checked calloc(3)
  */
-#define TCALLOC(_ptr, _ct, _sz) __builtin_choose_expr(__SAFE_IS_UL(_ct) && __SAFE_IS_UL(_sz), __safe_calloc((_ptr), (_ct), (_sz)), __SAFE_FAIL2(_sz, _ct))
+#define TCALLOC(_ptr, _ct, _sz) __safe_calloc((_ptr), (_ct), (_sz))
 
 /**
  * A somewhat sanity-checked realloc(3)
