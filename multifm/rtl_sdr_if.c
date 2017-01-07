@@ -61,8 +61,6 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
         goto done;
     }
 
-    DIAG("ALLOC: %p", sbuf);
-
     sbuf_ptr = (int16_t *)sbuf->data_buf;
 
     /* Up-convert the u8 samples to Q.15, subtract 127 from the unsigned sample to get actual power */

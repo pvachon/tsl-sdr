@@ -200,9 +200,9 @@ aresult_t _direct_fir_process_sample(struct direct_fir *fir, int16_t *psample_re
          */
         nr_samples_in = BL_MIN2(nr_samples_in, coeffs_remain);
 
-        if (coeffs_remain != fir->nr_coeffs) {
-            DIAG("Samples from buffer: %zu, start coefficient: %zu (%zu remain) start offset %zu",
-                    nr_samples_in, start_coeff, coeffs_remain, buf_offset);
+        if (nr_samples_in != fir->nr_coeffs) {
+            DIAG("Samples from buffer %p: %zu, start coefficient: %zu (%zu remain) start offset %zu (of %u)",
+                    cur_buf, nr_samples_in, start_coeff, coeffs_remain, buf_offset, fir->sb_active->nr_samples);
         }
 
         for (size_t i = 0; i < nr_samples_in / 4; i++) {

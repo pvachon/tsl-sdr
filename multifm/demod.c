@@ -30,7 +30,6 @@ aresult_t sample_buf_decref(struct demod_thread *thr, struct sample_buf *buf)
 
     /* Decrement the reference count */
     if (1 == atomic_fetch_sub(&buf->refcount, 1)) {
-        DIAG("FREED: %p", buf);
         TSL_BUG_IF_FAILED(frame_free(thr->samp_buf_alloc, (void **)&buf));
     }
 
@@ -47,8 +46,6 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
     TSL_ASSERT_ARG(NULL != dthr);
     TSL_ASSERT_ARG(NULL != sbuf);
 
-    DIAG("New Sample Buffer: %u samples.", sbuf->nr_samples);
-
     TSL_BUG_IF_FAILED(direct_fir_push_sample_buf(&dthr->fir, sbuf));
     TSL_BUG_IF_FAILED(direct_fir_can_process(&dthr->fir, &can_process, NULL));
 
@@ -62,8 +59,6 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
          */
         TSL_BUG_IF_FAILED(direct_fir_process(&dthr->fir, dthr->fm_samp_out_buf + dthr->nr_fm_samples,
                     LPF_PCM_OUTPUT_LEN - dthr->nr_fm_samples, &nr_samples));
-
-        DIAG("FIR Output Samples: %zu - %zu initially", nr_samples, dthr->nr_fm_samples);
 
         dthr->nr_fm_samples += nr_samples;
         dthr->total_nr_fm_samples += nr_samples;
