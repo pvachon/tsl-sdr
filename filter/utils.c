@@ -1,6 +1,7 @@
 #include <filter/utils.h>
 #include <filter/filter_priv.h>
 #include <filter/sample_buf.h>
+#include <filter/complex.h>
 
 #include <tsl/errors.h>
 #include <tsl/diag.h>
@@ -82,7 +83,7 @@ aresult_t dot_product_sample_buffers_real(
     } while (coeffs_remain != 0);
 
     /* Return the computed sample, in Q.15 (currently in Q.30 due to the prior multiplications) */
-    *psample = acc_res >> Q_15_SHIFT;
+    *psample = round_q30_q15(acc_res);
 
 done:
     return ret;

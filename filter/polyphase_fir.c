@@ -62,7 +62,7 @@ aresult_t polyphase_fir_new(struct polyphase_fir **pfir, size_t nr_coeffs, const
     for (size_t i = 0; i < fir->nr_phase_filters; i++) {
         printf("\nPhase %4zu: ", i);
         for (size_t j = 0; j < fir->nr_filter_coeffs; j++) {
-            printf("%6u ", fir->phase_filters[i * fir->nr_filter_coeffs + j]);
+            printf("%6d ", fir->phase_filters[i * fir->nr_filter_coeffs + j]);
         }
     }
     printf("\n");
@@ -142,7 +142,8 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
     aresult_t ret = A_OK;
 
     size_t phase_id = 0,
-           nr_consumed = 0;
+           nr_consumed = 0,
+           nr_computed_samples = 0;
 
     TSL_ASSERT_ARG(NULL != fir);
     TSL_ASSERT_ARG(NULL != out_buf);
@@ -157,8 +158,10 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
 
     phase_id = fir->last_phase;
 
-    for (size_t i = 0; i < nr_out_samples && fir->nr_samples < fir->nr_filter_coeffs; i++) {
+    for (size_t i = 0; i < nr_out_samples && fir->nr_samples > fir->nr_filter_coeffs; i++) {
         size_t interp_phase = 0;
+        TSL_BUG_ON(phase_id >= fir->nr_phase_filters);
+
         aresult_t filt_ret = dot_product_sample_buffers_real(
                 fir->sb_active,
                 fir->sb_next,
@@ -173,6 +176,8 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
         } else if (FAILED(filt_ret)) {
             goto done;
         }
+
+        nr_computed_samples++;
 
         /* Calculate the next phase to process */
         phase_id +=  fir->decimation;
@@ -198,12 +203,11 @@ aresult_t polyphase_fir_process(struct polyphase_fir *fir, int16_t *out_buf, siz
         fir->last_phase = phase_id;
     }
 
-    *nr_out_samples_generated = nr_out_samples;
+    *nr_out_samples_generated = nr_computed_samples;
 
 done:
     return ret;
 }
-
 
 aresult_t polyphase_fir_can_process(struct polyphase_fir *fir, bool *pcan_process)
 {
