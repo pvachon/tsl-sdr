@@ -26,7 +26,6 @@ int main(int argc, char *argv[])
     TEST_CASE(test_format_sockaddr_t_ipv4);
     TEST_CASE(test_format_sockaddr_t_ipv6);
     TEST_CASE(test_alloc_basic);
-    TEST_CASE(test_hash_table_basic);
     TEST_CASE(test_refcnt_basic);
     TEST_CASE(test_rbtree_lifecycle);
     TEST_CASE(test_rbtree_corner_cases);
