@@ -10,6 +10,16 @@ and `./waf build` to build the tools.
 
 The applications will end up in `build/release/bin`
 
+##Dependencies
+
+The TSL currently depends on:
+ * ConcurrencyKit (https://github.com/concurrencykit/ck)
+ * libjansson
+ * librtlsdr
+
+As well, some scripts will use GNUradio (since reimplementing Parks-McClelland
+would be just a waste of time!).
+
 #Tools
 
 There are a number of applications in this repo.
