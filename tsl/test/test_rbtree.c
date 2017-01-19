@@ -210,6 +210,10 @@ TEST_DECL(test_rbtree_lifecycle)
     for (size_t i = 0; i < BL_ARRAY_ENTRIES(nodes); ++i) {
         void *key = (void*)((intptr_t)(i) + (i % 2 ? 42 : -42));
         TEST_ASSERT_EQUALS(rb_tree_insert(&my_tree, key, &(nodes[i].node)), A_OK);
+        struct rb_tree_node *tnode = NULL;
+        TEST_ASSERT_EQUALS(rb_tree_get_rightmost(&my_tree, &tnode), A_OK);
+        fprintf(stderr, "Key Value: %zd\n", (int64_t)tnode->key);
+        //TEST_ASSERT_EQUALS((int64_t)tnode->key, -42);
     }
 
 
