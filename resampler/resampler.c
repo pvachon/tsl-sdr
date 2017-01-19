@@ -23,6 +23,7 @@
 
 #include <filter/filter.h>
 #include <filter/sample_buf.h>
+#include <filter/complex.h>
 
 #include <app/app.h>
 
@@ -65,6 +66,9 @@ static
 struct polyphase_fir *pfir = NULL;
 
 static
+bool dc_blocker = false;
+
+static
 void _usage(const char *appname)
 {
     RES_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -S [sample rate] [in_fifo] [out_fifo]",
@@ -80,7 +84,7 @@ void _set_options(int argc, char * const argv[])
     struct config *cfg CAL_CLEANUP(config_delete) = NULL;
     double *filter_coeffs_f = NULL;
 
-    while ((arg = getopt(argc, argv, "I:D:S:F:h")) != -1) {
+    while ((arg = getopt(argc, argv, "I:D:S:F:bh")) != -1) {
         switch (arg) {
         case 'I':
             interpolate = strtoll(optarg, NULL, 0);
@@ -93,6 +97,10 @@ void _set_options(int argc, char * const argv[])
             break;
         case 'F':
             filter_file = optarg;
+            break;
+        case 'b':
+            dc_blocker = true;
+            RES_MSG(SEV_INFO, "DC-BLOCKER-ENABLED", "Enabling DC Blocking Filter.");
             break;
         case 'h':
             _usage(argv[0]);
@@ -190,10 +198,63 @@ done:
 static
 int16_t output_buf[NR_SAMPLES];
 
+struct dc_blocker {
+    /**
+     * Filter pole coefficient for leaky integrator. In Q.15 representation.
+     */
+    int32_t p;
+
+    /**
+     * Prior input sample, for the differentiator. x[n-1]
+     */
+    int32_t x_n_1;
+
+    /**
+     * Prior output sample for feedback, in Q.15. y[n-1]
+     */
+    int32_t y_n_1;
+
+    /**
+     * The noise shaper filter value. This is technically in Q.30
+     */
+    int32_t f;
+
+    /**
+     * Accumulator
+     */
+    int32_t acc;
+};
+
+static inline
+aresult_t dc_blocker_apply(struct dc_blocker *blocker, int16_t *samples, size_t nr_samples)
+{
+    aresult_t ret = A_OK;
+
+    TSL_ASSERT_ARG(NULL != blocker);
+    TSL_ASSERT_ARG(NULL != samples);
+    TSL_ASSERT_ARG(0 != nr_samples);
+
+    DIAG("DC_BLOCK(%zu samples)", nr_samples);
+
+    for (size_t i = 0; i < nr_samples; i++) {
+        blocker->acc -= blocker->x_n_1;
+        blocker->x_n_1 = samples[i] << Q_15_SHIFT;
+        blocker->acc += blocker->x_n_1 - blocker->p * blocker->y_n_1;
+        blocker->y_n_1 = blocker->acc >> Q_15_SHIFT;
+        samples[i] = blocker->y_n_1;
+    }
+
+    return ret;
+}
+
 static
 aresult_t process_fir(void)
 {
     int ret = A_OK;
+
+    struct dc_blocker blck;
+    memset(&blck, 0, sizeof(blck));
+    blck.p = (int16_t)((1.0 - 0.9999) * (double)(1 << Q_15_SHIFT));
 
     do {
         int op_ret = 0;
@@ -226,6 +287,11 @@ aresult_t process_fir(void)
         /* Filter the samples */
         TSL_BUG_IF_FAILED(polyphase_fir_process(pfir, output_buf, NR_SAMPLES, &new_samples));
         TSL_BUG_ON(0 == new_samples);
+
+        /* Apply DC blocker, if asked */
+        if (true == dc_blocker) {
+            TSL_BUG_IF_FAILED(dc_blocker_apply(&blck, output_buf, new_samples));
+        }
 
         /* Write them out */
         if (0 > (op_ret = write(out_fifo, output_buf, new_samples * sizeof(int16_t)))) {

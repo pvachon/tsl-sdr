@@ -28,7 +28,7 @@
  * Round the given fixed point Q.30 value to a Q.15 value
  */
 static inline
-uint16_t round_q30_q15(uint32_t a)
+int16_t round_q30_q15(int32_t a)
 {
     return ((a >> Q_15_SHIFT) + ((a >> (Q_15_SHIFT - 1)) & 1));
 }
