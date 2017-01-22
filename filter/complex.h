@@ -52,7 +52,12 @@ static inline
 void cmul_q15_q15(int16_t a_re, int16_t a_im, int16_t b_re, int16_t b_im,
                   int16_t *r_re, int16_t *r_im)
 {
-    *r_re = (a_re * b_re - a_im * b_im) >> Q_15_SHIFT;
-    *r_im = (a_re * b_im + a_im * b_re) >> Q_15_SHIFT;
+    int32_t a_re_32 = a_re,
+            a_im_32 = a_im,
+            b_re_32 = b_re,
+            b_im_32 = b_im;
+
+    *r_re = round_q30_q15(a_re_32 * b_re_32 - a_im_32 * b_im_32);
+    *r_im = round_q30_q15(a_re_32 * b_im_32 + a_im_32 * b_re_32);
 }
 

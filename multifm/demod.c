@@ -39,6 +39,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 
 #ifdef _USE_ARM_NEON
 #include <arm_neon.h>
@@ -70,8 +71,17 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         TSL_BUG_IF_FAILED(direct_fir_process(&dthr->fir, dthr->fm_samp_out_buf + dthr->nr_fm_samples,
                     LPF_PCM_OUTPUT_LEN - dthr->nr_fm_samples, &nr_samples));
 
-        dthr->nr_fm_samples += nr_samples;
         dthr->total_nr_fm_samples += nr_samples;
+
+        if (-1 != dthr->debug_signal_fd) {
+            if (0 > write(dthr->debug_signal_fd, dthr->fm_samp_out_buf + dthr->nr_fm_samples, nr_samples * 2 * sizeof(int16_t))) {
+                int errnum = errno;
+                MFM_MSG(SEV_WARNING, "CANT-WRITE-DEBUG-FILE", "Unable to write %zu bytes to post-demod debug file. Reason: %s (%d). Skipping.",
+                        nr_samples * 2 * sizeof(int16_t), strerror(errnum), errnum);
+            }
+        }
+
+        dthr->nr_fm_samples += nr_samples;
 
         /* 2. Perform quadrature demod, write to output demodulation buffer. */
         /* TODO: smarten this up a lot - this sucks */
@@ -79,18 +89,26 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
 
         for (size_t i = 0; i < dthr->nr_fm_samples; i++) {
             TSL_BUG_ON(LPF_PCM_OUTPUT_LEN <= dthr->nr_pcm_samples);
-            /* Get the complex conjugate of the prior sample - calculate the instantaneous phase difference between the two. */
+            /* Get the complex conjugate of the prior sample, negating the phase term */
             int32_t b_re =  dthr->last_fm_re,
                     b_im = -dthr->last_fm_im,
                     a_re =  dthr->fm_samp_out_buf[2 * i    ],
                     a_im =  dthr->fm_samp_out_buf[2 * i + 1];
+            int16_t s_re = 0,
+                    s_im = 0;
 
-            int32_t s_re = a_re * b_re - a_im * b_im,
-                    s_im = a_im * b_re + a_re * b_im;
+            /* Calculate the phase difference */
+            cmul_q15_q15(a_re, a_im, b_re, b_im, &s_re, &s_im);
 
-            /* TODO: This needs to be made full-integer. Calculate the instantaneous phase difference. */
-            double sample = atan2((double)(s_im >> Q_15_SHIFT), (double)(s_re >> Q_15_SHIFT));
-            dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)(sample/M_PI * (double)(1ul << Q_15_SHIFT));
+            /* Convert from cartesian coordinates to a phase angle */
+            /* TODO: This needs to be made full-integer */
+            float q15 = 1l << Q_15_SHIFT;
+            float phi = fast_atan2f((float)s_im/q15, (float)s_re/q15);
+
+            /* Scale by pi (since atan2 returns an angle in (-pi,pi]), convert back to Q.15 */
+            float phi_scaled = phi/M_PI * q15;
+            TSL_BUG_ON(phi_scaled > q15);
+            dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)phi_scaled;
 
             dthr->nr_pcm_samples++;
 
@@ -269,7 +287,8 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
         const double *lpf_taps, size_t lpf_nr_taps,
         unsigned resample_decimate, unsigned resample_interpolate, const double *resample_filter_taps,
-        size_t nr_resample_filter_taps)
+        size_t nr_resample_filter_taps,
+        const char *fir_debug_output)
 {
     aresult_t ret = A_OK;
 
@@ -293,6 +312,7 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
     }
 
     thr->fifo_fd = -1;
+    thr->debug_signal_fd = -1;
 
     /* Initialize the work queue */
     if (FAILED(ret = work_queue_new(&thr->wq, 128))) {
@@ -301,11 +321,13 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
 
     /* Initialize the mutex */
     if (0 != pthread_mutex_init(&thr->wq_mtx, NULL)) {
+        ret = A_E_INVAL;
         goto done;
     }
 
     /* Initialize the condition variable */
     if (0 != pthread_cond_init(&thr->wq_cv, NULL)) {
+        ret = A_E_INVAL;
         goto done;
     }
 
@@ -314,10 +336,20 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         goto done;
     }
 
-    /* If applicable, initialize the polyphase rational resampler */
+    /* TODO If applicable, initialize the polyphase rational resampler */
+
+    /* Open the debug output file, if applicable */
+    if (NULL != fir_debug_output && '\0' != *fir_debug_output) {
+        if (0 > (thr->debug_signal_fd = open(fir_debug_output, O_WRONLY))) {
+            ret = A_E_INVAL;
+            MFM_MSG(SEV_FATAL, "CANT-OPEN-SIGNAL-DEBUG", "Unable to open signal debug dump file '%s'", fir_debug_output);
+            goto done;
+        }
+    }
 
     /* Open the output FIFO */
     if (0 > (thr->fifo_fd = open(out_fifo, O_WRONLY))) {
+        ret = A_E_INVAL;
         MFM_MSG(SEV_FATAL, "CANT-OPEN-FIFO", "Unable to open output fifo '%s'", out_fifo);
         goto done;
     }

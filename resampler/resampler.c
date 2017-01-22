@@ -71,8 +71,9 @@ bool dc_blocker = false;
 static
 void _usage(const char *appname)
 {
-    RES_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -S [sample rate] [in_fifo] [out_fifo]",
+    RES_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -S [sample rate] [-b] [in_fifo] [out_fifo]",
             appname);
+    RES_MSG(SEV_INFO, "USAGE", "        -b      Enable DC blocking filter");
     exit(EXIT_SUCCESS);
 }
 

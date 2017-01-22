@@ -47,7 +47,7 @@
 
 #include <rtl-sdr.h>
 
-#define RTL_SDR_CONVERSION_SHIFT        5
+#define RTL_SDR_CONVERSION_SHIFT        7
 
 /**
  * Free a live sample buffer.
@@ -474,7 +474,8 @@ aresult_t rtl_sdr_worker_thread_new(
     }
 
     CONFIG_ARRAY_FOR_EACH(channel, &channels, ret, arr_ctr) {
-        const char *fifo_name = NULL;
+        const char *fifo_name = NULL,
+                   *signal_debug = NULL;
         int nb_center_freq = -1;
         struct demod_thread *dmt = NULL;
 
@@ -488,13 +489,19 @@ aresult_t rtl_sdr_worker_thread_new(
             goto done;
         }
 
+        if (!FAILED(ret = config_get_string(&channel, &signal_debug, "signalDebugFile"))) {
+            MFM_MSG(SEV_INFO, "WRITING-SIGNAL-DEBUG", "The channel at frequency %d will have raw I/Q written to '%s'",
+                    nb_center_freq, signal_debug);
+        }
+
         DIAG("Center Frequency: %d Hz FIFO: %s", nb_center_freq, fifo_name);
 
         /* Create demodulator thread object */
-        if (FAILED(demod_thread_new(&dmt, -1, (int32_t)nb_center_freq - center_freq,
+        if (FAILED(ret = demod_thread_new(&dmt, -1, (int32_t)nb_center_freq - center_freq,
                         sample_rate, fifo_name, decimation_factor, lpf_taps, lpf_nr_taps,
                         resample_decimate, resample_interpolate, resample_filter_taps,
-                        nr_resample_filter_taps)))
+                        nr_resample_filter_taps,
+                        signal_debug)))
         {
             MFM_MSG(SEV_ERROR, "FAILED-DEMOD-THREAD", "Failed to create demodulator thread, aborting.");
             goto done;
