@@ -103,11 +103,13 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
             /* Convert from cartesian coordinates to a phase angle */
             /* TODO: This needs to be made full-integer */
             float q15 = 1l << Q_15_SHIFT;
-            float phi = fast_atan2f((float)s_im/q15, (float)s_re/q15);
+            float f_im = s_im,
+                  f_re = s_re;
+            /* Find phase angle of normalized cartesian coordinates */
+            float phi = fast_atan2f(f_im/q15, f_re/q15);
 
             /* Scale by pi (since atan2 returns an angle in (-pi,pi]), convert back to Q.15 */
             float phi_scaled = phi/M_PI * q15;
-            TSL_BUG_ON(phi_scaled > q15);
             dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)phi_scaled;
 
             dthr->nr_pcm_samples++;
