@@ -103,7 +103,11 @@ int main(int argc, const char *argv[])
     TSL_BUG_IF_FAILED(app_sigint_catch(NULL));
 
     /* Generate the demodulation states from configs (FIXME useful error messages) */
-    sr_hz = 1000000ul; /* Always sample at 1MHz */
+    if (FAILED(config_get_integer(cfg, &sr_hz, "sampleRateHz"))) {
+        MFM_MSG(SEV_INFO, "NO-SAMPLE-RATE", "Need to specify a sample rate, in Hertz.");
+        goto done;
+    }
+
     TSL_BUG_IF_FAILED(config_get_integer(cfg, &center_hz, "centerFreqHz"));
 
     if (FAILED(config_get_integer(cfg, &nr_samp_bufs, "nrSampBufs"))) {
