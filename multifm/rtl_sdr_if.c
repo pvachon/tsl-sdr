@@ -287,10 +287,12 @@ aresult_t rtl_sdr_worker_thread_new(
     size_t arr_ctr = 0,
            lpf_nr_taps = 0,
            nr_resample_filter_taps = 0;
-    bool test_mode = false;
+    bool test_mode = false,
+         enable_dc_block = false;
     double *lpf_taps = NULL,
            *resample_filter_taps = NULL;
-    double gain_db = 0.0;
+    double gain_db = 0.0,
+           dc_block_pole = 0.9999;
 
 
     TSL_ASSERT_ARG(NULL != cfg);
@@ -442,6 +444,26 @@ aresult_t rtl_sdr_worker_thread_new(
     /* Reset the endpoint */
     TSL_BUG_ON(0 != rtlsdr_reset_buffer(dev));
 
+    /* For debugging purposes, enable test mode. */
+    if (!FAILED(ret = config_get_boolean(cfg, &test_mode, "sdrTestMode")) & (true == test_mode)) {
+        MFM_MSG(SEV_INFO, "TEST-MODE", "Enabling RTL-SDR test mode");
+        if (0 != rtlsdr_set_testmode(dev, 1)) {
+            MFM_MSG(SEV_ERROR, "CANT-SET-TEST-MODE", "Failed to enable test mode, aborting.");
+            ret = A_E_INVAL;
+            goto done;
+        }
+    }
+
+    if (!FAILED(ret = config_get_boolean(cfg, &enable_dc_block, "enableDCBlocker"))) {
+        if (true == enable_dc_block) {
+            if (FAILED(ret = config_get_float(cfg, &dc_block_pole, "dcBlockerPole"))) {
+                dc_block_pole = 0.9999;
+            }
+
+            MFM_MSG(SEV_INFO, "DC-BLOCK-ENABLE", "Enabled DC Blocker. Using pole value %f.", dc_block_pole);
+        }
+    }
+
     DIAG("Gain set to: %f", (double)rtlsdr_get_tuner_gain(dev)/10.0);
 
     /* Create the worker thread context */
@@ -461,16 +483,6 @@ aresult_t rtl_sdr_worker_thread_new(
         MFM_MSG(SEV_ERROR, "MISSING-CHANNELS", "Need to specify at least one channel to demodulate.");
         ret = A_E_INVAL;
         goto done;
-    }
-
-    /* For debugging purposes, enable test mode. */
-    if (!FAILED(ret = config_get_boolean(cfg, &test_mode, "sdrTestMode")) & (true == test_mode)) {
-        MFM_MSG(SEV_INFO, "TEST-MODE", "Enabling RTL-SDR test mode");
-        if (0 != rtlsdr_set_testmode(dev, 1)) {
-            MFM_MSG(SEV_ERROR, "CANT-SET-TEST-MODE", "Failed to enable test mode, aborting.");
-            ret = A_E_INVAL;
-            goto done;
-        }
     }
 
     CONFIG_ARRAY_FOR_EACH(channel, &channels, ret, arr_ctr) {
@@ -501,7 +513,8 @@ aresult_t rtl_sdr_worker_thread_new(
                         sample_rate, fifo_name, decimation_factor, lpf_taps, lpf_nr_taps,
                         resample_decimate, resample_interpolate, resample_filter_taps,
                         nr_resample_filter_taps,
-                        signal_debug)))
+                        signal_debug,
+                        dc_block_pole, enable_dc_block)))
         {
             MFM_MSG(SEV_ERROR, "FAILED-DEMOD-THREAD", "Failed to create demodulator thread, aborting.");
             goto done;

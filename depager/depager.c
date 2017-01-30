@@ -1,6 +1,5 @@
 /*
- *  resampler.c - A really brainless app for doing rational resampling of
- *      samples being passed between applications.
+ *  depager.c - Demodulate and decode FLEX pager transmissions
  *
  *  Copyright (c)2017 Phil Vachon <phil@security-embedded.com>
  *
@@ -20,6 +19,7 @@
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+#include <pager/pager_flex.h>
 
 #include <filter/filter.h>
 #include <filter/sample_buf.h>
@@ -40,7 +40,7 @@
 #include <errno.h>
 #include <string.h>
 
-#define RES_MSG(sev, sys, msg, ...) MESSAGE("RESAMPLER", sev, sys, msg, ##__VA_ARGS__)
+#define DEP_MSG(sev, sys, msg, ...) MESSAGE("DEPAGER", sev, sys, msg, ##__VA_ARGS__)
 
 static
 unsigned interpolate = 1;
@@ -55,9 +55,6 @@ static
 int in_fifo = -1;
 
 static
-int out_fifo = -1;
-
-static
 int16_t *filter_coeffs = NULL;
 
 static
@@ -70,12 +67,25 @@ static
 bool dc_blocker = false;
 
 static
+unsigned pager_freq = 0;
+
+static
+struct pager_flex *flex = NULL;
+
+static
 void _usage(const char *appname)
 {
-    RES_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -S [sample rate] [-b] [in_fifo] [out_fifo]",
+    DEP_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -S [sample rate] -f [pager chan freq] [-b] [in_fifo]",
             appname);
-    RES_MSG(SEV_INFO, "USAGE", "        -b      Enable DC blocking filter");
+    DEP_MSG(SEV_INFO, "USAGE", "        -b      Enable DC blocking filter");
     exit(EXIT_SUCCESS);
+}
+
+static
+aresult_t _on_flex_msg(struct pager_flex *flex_state, uint16_t baud, char phase, uint32_t cap_code, enum pager_flex_msg_type msg_type, const char *message_bytes, size_t message_len)
+{
+    /* Do nothing (for now) */
+    return A_OK;
 }
 
 static
@@ -86,8 +96,11 @@ void _set_options(int argc, char * const argv[])
     struct config *cfg CAL_CLEANUP(config_delete) = NULL;
     double *filter_coeffs_f = NULL;
 
-    while ((arg = getopt(argc, argv, "I:D:S:F:bh")) != -1) {
+    while ((arg = getopt(argc, argv, "I:D:S:F:f:bh")) != -1) {
         switch (arg) {
+        case 'f':
+            pager_freq = strtoll(optarg, NULL, 0);
+            break;
         case 'I':
             interpolate = strtoll(optarg, NULL, 0);
             break;
@@ -102,7 +115,7 @@ void _set_options(int argc, char * const argv[])
             break;
         case 'b':
             dc_blocker = true;
-            RES_MSG(SEV_INFO, "DC-BLOCKER-ENABLED", "Enabling DC Blocking Filter.");
+            DEP_MSG(SEV_INFO, "DC-BLOCKER-ENABLED", "Enabling DC Blocking Filter.");
             break;
         case 'h':
             _usage(argv[0]);
@@ -111,33 +124,38 @@ void _set_options(int argc, char * const argv[])
     }
 
     if (optind > argc) {
-        RES_MSG(SEV_FATAL, "MISSING-SRC-DEST", "Missing source/destination file");
+        DEP_MSG(SEV_FATAL, "MISSING-SRC-DEST", "Missing source/destination file");
         exit(EXIT_FAILURE);
     }
 
     if (0 == decimate) {
-        RES_MSG(SEV_FATAL, "BAD-DECIMATION", "Decimation factor must be a non-zero integer.");
+        DEP_MSG(SEV_FATAL, "BAD-DECIMATION", "Decimation factor must be a non-zero integer.");
         exit(EXIT_FAILURE);
     }
 
     if (0 == decimate) {
-        RES_MSG(SEV_FATAL, "BAD-INTERPOLATION", "Interpolation factor must be a non-zero integer.");
+        DEP_MSG(SEV_FATAL, "BAD-INTERPOLATION", "Interpolation factor must be a non-zero integer.");
+        exit(EXIT_FAILURE);
+    }
+
+    if (0 == pager_freq) {
+        DEP_MSG(SEV_FATAL, "BAD-PAGER-FREQ", "Pager frequency must be non-zero");
         exit(EXIT_FAILURE);
     }
 
     if (NULL == filter_file) {
-        RES_MSG(SEV_FATAL, "BAD-FILTER-FILE", "Need to specify a filter JSON file.");
+        DEP_MSG(SEV_FATAL, "BAD-FILTER-FILE", "Need to specify a filter JSON file.");
         exit(EXIT_FAILURE);
     }
 
-    RES_MSG(SEV_INFO, "CONFIG", "Resampling: %u/%u from %u to %f", interpolate, decimate, input_sample_rate,
+    DEP_MSG(SEV_INFO, "CONFIG", "Resampling: %u/%u from %u to %f", interpolate, decimate, input_sample_rate,
             ((double)interpolate/(double)decimate)*(double)input_sample_rate);
-    RES_MSG(SEV_INFO, "CONFIG", "Loading filter coefficients from '%s'", filter_file);
+    DEP_MSG(SEV_INFO, "CONFIG", "Loading filter coefficients from '%s'", filter_file);
 
     TSL_BUG_IF_FAILED(config_new(&cfg));
 
     if (FAILED(config_add(cfg, filter_file))) {
-        RES_MSG(SEV_INFO, "BAD-CONFIG", "Configuration file '%s' cannot be processed, aborting.",
+        DEP_MSG(SEV_INFO, "BAD-CONFIG", "Configuration file '%s' cannot be processed, aborting.",
                 filter_file);
         exit(EXIT_FAILURE);
     }
@@ -151,12 +169,7 @@ void _set_options(int argc, char * const argv[])
     }
 
     if (0 > (in_fifo = open(argv[optind], O_RDONLY))) {
-        RES_MSG(SEV_INFO, "BAD-INPUT", "Bad input - cannot open %s", argv[optind]);
-        exit(EXIT_FAILURE);
-    }
-
-    if (0 > (out_fifo = open(argv[optind + 1], O_WRONLY))) {
-        RES_MSG(SEV_INFO, "BAD-OUTPUT", "Bad output - cannot open %s", argv[optind + 1]);
+        DEP_MSG(SEV_INFO, "BAD-INPUT", "Bad input - cannot open %s", argv[optind]);
         exit(EXIT_FAILURE);
     }
 }
@@ -201,7 +214,7 @@ static
 int16_t output_buf[NR_SAMPLES];
 
 static
-aresult_t process_fir(void)
+aresult_t process_samples(void)
 {
     int ret = A_OK;
 
@@ -223,7 +236,7 @@ aresult_t process_fir(void)
             if (0 >= (op_ret = read(in_fifo, read_buf->data_buf, read_buf->sample_buf_bytes))) {
                 int errnum = errno;
                 ret = A_E_INVAL;
-                RES_MSG(SEV_FATAL, "READ-FIFO-FAIL", "Failed to read from input fifo: %s (%d)",
+                DEP_MSG(SEV_FATAL, "READ-FIFO-FAIL", "Failed to read from input fifo: %s (%d)",
                         strerror(errnum), errnum);
                 goto done;
             }
@@ -237,7 +250,7 @@ aresult_t process_fir(void)
             TSL_BUG_IF_FAILED(polyphase_fir_push_sample_buf(pfir, read_buf));
         }
 
-        /* Filter the samples */
+        /* Filter the samples, decimating as appropriate */
         TSL_BUG_IF_FAILED(polyphase_fir_process(pfir, output_buf, NR_SAMPLES, &new_samples));
         TSL_BUG_ON(0 == new_samples);
 
@@ -246,16 +259,8 @@ aresult_t process_fir(void)
             TSL_BUG_IF_FAILED(dc_blocker_apply(&blck, output_buf, new_samples));
         }
 
-        /* Write them out */
-        if (0 > (op_ret = write(out_fifo, output_buf, new_samples * sizeof(int16_t)))) {
-            int errnum = errno;
-            ret = A_E_INVAL;
-            RES_MSG(SEV_FATAL, "WRITE-FIFO-FAIL", "Failed to write to output fifo: %s (%d)",
-                    strerror(errnum), errnum);
-            goto done;
-        }
-
-        DIAG("Wrote %d bytes to output FIFO", op_ret);
+        /* Process with the pager object */
+        TSL_BUG_IF_FAILED(pager_flex_on_pcm(flex, output_buf, new_samples));
     } while (app_running());
 
 done:
@@ -271,17 +276,19 @@ int main(int argc, char * const argv[])
 
     _set_options(argc, argv);
     TSL_BUG_IF_FAILED(polyphase_fir_new(&pfir, nr_filter_coeffs, filter_coeffs, interpolate, decimate));
+    TSL_BUG_IF_FAILED(pager_flex_new(&flex, pager_freq, _on_flex_msg));
 
-    RES_MSG(SEV_INFO, "STARTING", "Starting polyphase resampler");
+    DEP_MSG(SEV_INFO, "STARTING", "Starting pager message decoder on frequency %u Hz.", pager_freq);
 
-    if (FAILED(process_fir())) {
-        RES_MSG(SEV_FATAL, "FIR-FAILED", "Failed during filtering.");
+    if (FAILED(process_samples())) {
+        DEP_MSG(SEV_FATAL, "FIR-FAILED", "Failed during pager processing, aborting.");
         goto done;
     }
 
     ret = EXIT_SUCCESS;
 
 done:
+    pager_flex_delete(&flex);
     polyphase_fir_delete(&pfir);
     return ret;
 }

@@ -13,6 +13,34 @@ enum pager_flex_msg_type {
     PAGER_FLEX_TONE,
 };
 
+enum pager_flex_modulation {
+    PAGER_FLEX_MODULATION_2FSK,
+    PAGER_FLEX_MODULATION_4FSK
+};
+
+enum pager_flex_state {
+    /**
+     * We're hunting for a sync pattern for Sync 1. This includes searching for
+     * the alternating 1/0 pattern, while also monitoring for any of the 16-bit
+     * Sync A codes.
+     *
+     * This uses the alternating 1/0 pattern at 1600 bps to increase confidence
+     * of a sync match. The 1/0 pattern is not a discriminating pattern.
+     */
+    PAGER_FLEX_STATE_SYNC_1,
+
+    /**
+     * We've found the sync pattern, verified it, eaten the FIW, and are now entering
+     * the second Sync phase. This is where we train the 4FSK slicer.
+     */
+    PAGER_FLEX_STATE_SYNC_2,
+
+    /**
+     * We're now decoding blocks of this frame
+     */
+    PAGER_FLEX_STATE_BLOCK,
+};
+
 /**
  * Callback type. This is registered with each pager_flex, and is called whenever there is a message to process.
  *
@@ -26,9 +54,120 @@ enum pager_flex_msg_type {
  */
 typedef aresult_t (*pager_flex_on_message_cb_t)(struct pager_flex *flex, uint16_t baud, char phase, uint32_t cap_code, enum pager_flex_msg_type message_type, const char *message_bytes, size_t message_len);
 
+enum pager_flex_sync_state {
+    /**
+     * Searching for the Bitsync 1 pattern
+     */
+    PAGER_FLEX_SYNC_STATE_SEARCH_BS1,
+
+    /**
+     * Found the Bitsync 1 pattern, 32-bits long
+     */
+    PAGER_FLEX_SYNC_STATE_BS1,
+
+    /**
+     * Looking for the A word of the sync. 32-bits long, 16-bits indicating the state, 16-bits being constant
+     */
+    PAGER_FLEX_SYNC_STATE_A,
+
+    /**
+     * Looking for the B word (not strict) - 16 bits
+     */
+    PAGER_FLEX_SYNC_STATE_B,
+
+    /**
+     * Looking for the A mode word, inverted - 32-bits
+     */
+    PAGER_FLEX_SYNC_STATE_INV_A,
+
+    /**
+     * Accumulating the FIW
+     */
+    PAGER_FLEX_SYNC_STATE_FIW,
+
+    /**
+     * That's it. Once we have the FIW, we check all the state pieces. If they check out, we can expose
+     * state to the FLEX pager object itself. If they don't we reset to BS1 state. The FLEX pager object
+     * will then switch to Sync 2 if everything checks out.
+     */
+    PAGER_FLEX_SYNC_STATE_SYNCED,
+};
+
+struct pager_flex_coding;
+
+/**
+ * FLEX Sync 1 stage state tracker. Tracks the detection of various sync phases in Sync 1,
+ * then stores the current state for the rest of the objects to extract.
+ */
+struct pager_flex_sync {
+    uint32_t sync_words[10];
+    enum pager_flex_sync_state state;
+    uint8_t sample_counter;
+    uint8_t bit_counter;
+    uint32_t a;
+    uint16_t b;
+    uint32_t inv_a;
+    uint32_t fiw;
+    struct pager_flex_coding *coding;
+};
+
+struct bch_code;
+
+/**
+ * A FLEX pager decoder.
+ *
+ * The input for this must always be a 16kHz signal.
+ */
 struct pager_flex {
+    /**
+     * Frequency, in Hertz, of the center of this pager channel
+     */
     uint32_t freq_hz;
+
+    /**
+     * Callback hit on a complete message
+     */
     pager_flex_on_message_cb_t on_msg;
+
+    /**
+     * Synchronization state for the FLEX message stream
+     */
+    struct pager_flex_sync sync;
+
+    /**
+     * State for the BCH Error Corrector for the BCH(31, 23) code FLEX uses
+     */
+    struct bch_code *bch;
+
+    /**
+     * The baud rate
+     */
+    uint16_t baud_rate;
+
+    /**
+     * Current modulation. This always starts in 2FSK, but can move to 4FSK depending on the sync word contents.
+     */
+    enum pager_flex_modulation modulation;
+
+    /**
+     * Symbol counter. This is used to count symbols dependant on the state the FLEX receiver is in
+     */
+    unsigned int symbol_counter;
+
+    /**
+     * The current state of the FLEX receiver
+     */
+    enum pager_flex_state state;
+
+    /**
+     * The number of samples to skip before sampling for slicing
+     */
+    uint16_t skip;
+
+    /**
+     * The symbol sample rate. The number of samples that represents a single symbol
+     */
+    uint16_t symbol_samples;
 };
 
 /**

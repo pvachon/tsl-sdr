@@ -249,6 +249,14 @@ def build(bld):
 		name	= 'resampler',
 	)
 
+	# depager
+	bld.program(
+		source	= bld.path.ant_glob('depager/*.c'),
+		use		= ['app', 'config', 'tsl', 'filter', 'pager'],
+		target	= os.path.join(binPath, 'depager'),
+		name	= 'depager',
+	)
+
 	#app
 	appExcl = []
 	if cpuArch == 'armv7l':

@@ -45,8 +45,6 @@
 #include <arm_neon.h>
 #endif
 
-#define Q_15_SHIFT                      14
-
 static
 aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbuf)
 {
@@ -117,6 +115,12 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
             /* Store the last sample processed */
             dthr->last_fm_re = a_re;
             dthr->last_fm_im = a_im;
+        }
+
+        /* TODO: Apply the polyphase resampler, if we're asked */
+
+        if (true == dthr->block_dc) {
+            TSL_BUG_IF_FAILED(dc_blocker_apply(&dthr->dc_blk, dthr->pcm_out_buf, dthr->nr_pcm_samples));
         }
 
         /* x. Write out the resulting PCM samples */
@@ -290,7 +294,8 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         const double *lpf_taps, size_t lpf_nr_taps,
         unsigned resample_decimate, unsigned resample_interpolate, const double *resample_filter_taps,
         size_t nr_resample_filter_taps,
-        const char *fir_debug_output)
+        const char *fir_debug_output,
+        double dc_block_pole, bool enable_dc_block)
 {
     aresult_t ret = A_OK;
 
@@ -301,6 +306,7 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
     TSL_ASSERT_ARG(0 != decimation_factor);
     TSL_ASSERT_ARG(NULL != lpf_taps);
     TSL_ASSERT_ARG(0 != lpf_nr_taps);
+    TSL_ASSERT_ARG(1.0 > dc_block_pole && 0.0 <= dc_block_pole);
 
     if (0 != resample_decimate && 0 != resample_interpolate) {
         TSL_ASSERT_ARG(NULL != resample_filter_taps);
@@ -336,6 +342,13 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
     /* Initialize the filter */
     if (FAILED(ret = _demod_fir_prepare(thr, lpf_taps, lpf_nr_taps, offset_hz, samp_hz, decimation_factor))) {
         goto done;
+    }
+
+    /* Set up the DC blocker, if applicable */
+    thr->block_dc = enable_dc_block;
+
+    if (true == enable_dc_block) {
+        TSL_BUG_IF_FAILED(dc_blocker_init(&thr->dc_blk, dc_block_pole));
     }
 
     /* TODO If applicable, initialize the polyphase rational resampler */
@@ -377,3 +390,4 @@ done:
     }
     return ret;
 }
+

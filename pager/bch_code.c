@@ -200,7 +200,7 @@ void bch_code_encode(struct bch_code *bch_code_data, int data[])
     };
 };
 
-
+#if 0
 int bch_code_decode(struct bch_code *bch_code_data, int recd[])
 {
     TSL_BUG_ON(NULL == bch_code_data);
@@ -302,6 +302,100 @@ int bch_code_decode(struct bch_code *bch_code_data, int recd[])
 
     return retval;
 }
+#endif
+
+int bch_code_decode(struct bch_code *bch_code_data, uint32_t *precd)
+{
+    TSL_BUG_ON(NULL == bch_code_data);
+    TSL_BUG_ON(NULL == precd);
+
+    /*
+     * We do not need the Berlekamp algorithm to decode.
+     * We solve before hand two equations in two variables.
+     */
+
+    register int    i, j, q;
+    int             elp[3], s[5], s3;
+    int             count = 0, syn_error = 0;
+    int             loc[3], reg[3];
+    int             aux;
+    uint32_t        recd = *precd;
+    int retval=0;
+    /* first form the syndromes */
+    //  printf("s[] = (");
+    for (i = 1; i <= 4; i++) {
+        s[i] = 0;
+        for (j = 0; j < bch_code_data->n; j++) {
+            if ((recd >> j) & 1) {
+                s[i] ^= bch_code_data->alpha_to[(i * j) % bch_code_data->n];
+            }
+        }
+        if (s[i] != 0) {
+            syn_error = 1;  /* set flag if non-zero syndrome */
+        }
+        /* NOTE: If only error detection is needed,
+         * then exit the program here...
+         */
+        /* convert syndrome from polynomial form to index form  */
+        s[i] = bch_code_data->index_of[s[i]];
+    }
+
+    if (syn_error) {    /* If there are errors, try to correct them */
+        if (s[1] != -1) {
+            s3 = (s[1] * 3) % bch_code_data->n;
+            if ( s[3] == s3 ) { /* Was it a single error ? */
+                /* Correct the error */
+                recd ^= 1 << s[1];
+            } else {
+                /* Assume two errors occurred and solve
+                 * for the coefficients of sigma(x), the
+                 * error locator polynomail
+                 */
+                if (s[3] != -1) {
+                    aux = bch_code_data->alpha_to[s3] ^ bch_code_data->alpha_to[s[3]];
+                } else {
+                    aux = bch_code_data->alpha_to[s3];
+                }
+                elp[0] = 0;
+                elp[1] = (s[2] - bch_code_data->index_of[aux] + bch_code_data->n) % bch_code_data->n;
+                elp[2] = (s[1] - bch_code_data->index_of[aux] + bch_code_data->n) % bch_code_data->n;
+
+                /* find roots of the error location polynomial */
+                for (i = 1; i <= 2; i++) {
+                    reg[i] = elp[i];
+                }
+                count = 0;
+                for (i = 1; i <= bch_code_data->n; i++) { /* Chien search */
+                    q = 1;
+                    for (j = 1; j <= 2; j++) {
+                        if (reg[j] != -1) {
+                            reg[j] = (reg[j] + j) % bch_code_data->n;
+                            q ^= bch_code_data->alpha_to[reg[j]];
+                        }
+                    }
+                    if (!q) {   /* store error location number indices */
+                        loc[count] = i % bch_code_data->n;
+                        count++;
+                    }
+                }
+                if (count == 2) {
+                    /* no. roots = degree of elp hence 2 errors */
+                    for (i = 0; i < 2; i++) {
+                        recd ^= (1 << loc[i]);
+                    }
+                } else {    /* Cannot solve: Error detection */
+                    retval=1;
+                }
+            }
+        } else if (s[2] != -1) {/* Error detection */
+            retval=1;
+        }
+    }
+
+    *precd = recd;
+
+    return retval;
+}
 
 /*
  * Example usage BCH(31,21,5)
@@ -343,8 +437,7 @@ aresult_t bch_code_new(struct bch_code **pcode, int p[], int m, int n, int k, in
                 bch_code_data->g        == NULL ||
                 bch_code_data->bb       == NULL
                 ) {
-            bch_code_delete(bch_code_data);
-            bch_code_data=NULL;
+            bch_code_delete(&bch_code_data);
         }
     }
 
@@ -368,8 +461,11 @@ done:
     return ret;
 }
 
-void bch_code_delete(struct bch_code *bch_code_data)
+void bch_code_delete(struct bch_code **pbch_code_data)
 {
+    struct bch_code *bch_code_data = NULL;
+    TSL_BUG_ON(NULL == pbch_code_data);
+    bch_code_data = *pbch_code_data;
     TSL_BUG_ON(NULL == bch_code_data);
 
     if (bch_code_data->alpha_to != NULL) free(bch_code_data->alpha_to);
@@ -379,5 +475,7 @@ void bch_code_delete(struct bch_code *bch_code_data)
     if (bch_code_data->bb       != NULL) free(bch_code_data->bb);
 
     free(bch_code_data);
+
+    *pbch_code_data = NULL;
 }
 

@@ -151,8 +151,6 @@ aresult_t polyphase_fir_push_sample_buf(struct polyphase_fir *fir, struct sample
         }
     }
 
-    DIAG("PUSH(active = %p next = %p)", fir->sb_active, fir->sb_next);
-
     fir->nr_samples += buf->nr_samples;
 
 done:

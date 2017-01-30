@@ -5,6 +5,7 @@
 #include <tsl/worker_thread.h>
 
 #include <filter/direct_fir.h>
+#include <filter/dc_blocker.h>
 
 #include <pthread.h>
 
@@ -30,6 +31,16 @@ struct demod_thread {
      * An optional polyphase resampler.
      */
     struct polyphase_fir *pfir;
+
+    /**
+     * State for the DC blocker. Not used if DC blocker is disabled.
+     */
+    struct dc_blocker dc_blk;
+
+    /**
+     * Whether or not we want the DC blocker enabled
+     */
+    bool block_dc;
 
     /**
      * The file descriptor for the output FIFO
@@ -110,7 +121,8 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         const double *lpf_taps, size_t lpf_nr_taps,
         unsigned resample_decimate, unsigned resample_interpolate, const double *resample_filter_taps,
         size_t nr_resample_filter_taps,
-        const char *fir_debug_output);
+        const char *fir_debug_output,
+        double dc_block_pole, bool enable_dc_block);
 
 float fast_atan2f(float y, float x);
 
