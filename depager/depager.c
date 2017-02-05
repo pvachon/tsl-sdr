@@ -73,9 +73,15 @@ static
 struct pager_flex *flex = NULL;
 
 static
+int sample_debug_fd = -1;
+
+static
+double dc_block_pole = 0.9999;
+
+static
 void _usage(const char *appname)
 {
-    DEP_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -S [sample rate] -f [pager chan freq] [-b] [in_fifo]",
+    DEP_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -d [sample_debug_file] -S [sample rate] -f [pager chan freq] [-b] [in_fifo]",
             appname);
     DEP_MSG(SEV_INFO, "USAGE", "        -b      Enable DC blocking filter");
     exit(EXIT_SUCCESS);
@@ -96,7 +102,7 @@ void _set_options(int argc, char * const argv[])
     struct config *cfg CAL_CLEANUP(config_delete) = NULL;
     double *filter_coeffs_f = NULL;
 
-    while ((arg = getopt(argc, argv, "I:D:S:F:f:bh")) != -1) {
+    while ((arg = getopt(argc, argv, "I:D:S:F:f:d:p:bh")) != -1) {
         switch (arg) {
         case 'f':
             pager_freq = strtoll(optarg, NULL, 0);
@@ -117,6 +123,21 @@ void _set_options(int argc, char * const argv[])
             dc_blocker = true;
             DEP_MSG(SEV_INFO, "DC-BLOCKER-ENABLED", "Enabling DC Blocking Filter.");
             break;
+
+        case 'd':
+            if (0 > (sample_debug_fd = open(optarg, O_WRONLY | O_CREAT, 0666))) {
+                int errnum = errno;
+                DEP_MSG(SEV_ERROR, "FAIL-DEBUG-FILE", "Failed to open debug output file %s: %s (%d)",
+                        optarg, strerror(errnum), errnum);
+                exit(EXIT_FAILURE);
+            }
+            break;
+
+        case 'p':
+            dc_block_pole = strtod(optarg, NULL);
+            DEP_MSG(SEV_INFO, "DC-BLOCK-POLE", "Setting DC Blocker pole to %f", dc_block_pole);
+            break;
+
         case 'h':
             _usage(argv[0]);
             break;
@@ -220,7 +241,7 @@ aresult_t process_samples(void)
 
     struct dc_blocker blck;
 
-    TSL_BUG_IF_FAILED(dc_blocker_init(&blck, 0.9999));
+    TSL_BUG_IF_FAILED(dc_blocker_init(&blck, dc_block_pole));
 
     do {
         int op_ret = 0;
@@ -261,6 +282,16 @@ aresult_t process_samples(void)
 
         /* Process with the pager object */
         TSL_BUG_IF_FAILED(pager_flex_on_pcm(flex, output_buf, new_samples));
+
+        /* If a sample debug file was specified, write to the sample debug file */
+        if (-1 != sample_debug_fd) {
+            if (0 > write(sample_debug_fd, output_buf, new_samples * sizeof(int16_t))) {
+                int errnum = errno;
+                DEP_MSG(SEV_FATAL, "WRITE-DEBUG-FAIL", "Failed to write to output debug file: %s (%d)",
+                        strerror(errnum), errnum);
+            }
+        }
+
     } while (app_running());
 
 done:

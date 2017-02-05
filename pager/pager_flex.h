@@ -111,6 +111,65 @@ struct pager_flex_sync {
     struct pager_flex_coding *coding;
 };
 
+enum pager_flex_sync_2_state {
+    /**
+     * Accumulate comma values. We calculate the envelope of the signal during this period.
+     */
+    PAGER_FLEX_SYNC_2_STATE_COMMA,
+
+    /**
+     * Accumulate the C pattern
+     */
+    PAGER_FLEX_SYNC_2_STATE_C,
+
+    /**
+     * Accumulate the inverted comma
+     */
+    PAGER_FLEX_SYNC_2_STATE_INV_COMMA,
+
+    /**
+     * Accumulate inverted C
+     */
+    PAGER_FLEX_SYNC_2_STATE_INV_C,
+
+    /**
+     * We're close enough on the C pattern now, let's start handling the block.
+     */
+    PAGER_FLEX_SYNC_2_STATE_SYNCED,
+};
+
+/**
+ * FLEX Sync 2 stage state tracker. Tracks the comma and the C pattern.
+ *
+ * This also detects the envelope of the signal, to train the 4FSK slicer.
+ */
+struct pager_flex_sync_2 {
+    /**
+     * Current state of Sync 2 decoding
+     */
+    enum pager_flex_sync_2_state state;
+
+    /**
+     * The count of the number of dots we've seen
+     */
+    uint16_t nr_dots;
+
+    /**
+     * The C value we've accumulated (diagnostic only)
+     */
+    uint16_t c;
+
+    /**
+     * Number of bits of C we've processed
+     */
+    uint8_t nr_c;
+
+    /**
+     * Sum of samples in dot sequence
+     */
+    int32_t range_avg_sum;
+};
+
 struct bch_code;
 
 /**
@@ -120,9 +179,9 @@ struct bch_code;
  */
 struct pager_flex {
     /**
-     * Frequency, in Hertz, of the center of this pager channel
+     * The range, in samples, for slicing. Used only for 4FSK slicing.
      */
-    uint32_t freq_hz;
+    int16_t slice_range;
 
     /**
      * Callback hit on a complete message
@@ -133,6 +192,11 @@ struct pager_flex {
      * Synchronization state for the FLEX message stream
      */
     struct pager_flex_sync sync;
+
+    /**
+     * State for the second phase of the synchronization.
+     */
+    struct pager_flex_sync_2 sync_2;
 
     /**
      * State for the BCH Error Corrector for the BCH(31, 23) code FLEX uses
@@ -165,9 +229,20 @@ struct pager_flex {
     uint16_t skip;
 
     /**
+     * The skip count
+     */
+    uint16_t skip_count;
+
+    /**
      * The symbol sample rate. The number of samples that represents a single symbol
      */
     uint16_t symbol_samples;
+
+    /**
+     * Frequency, in Hertz, of the center of this pager channel
+     */
+    uint32_t freq_hz;
+
 };
 
 /**
