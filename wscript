@@ -26,7 +26,7 @@ cpuArchCommand = '/bin/uname -m'.split(' ')
 cpuArch = subprocess.check_output(cpuArchCommand).strip()
 
 def _checkSupportedArch(cpuArchId):
-	if cpuArchId != 'x86_64' and cpuArchId != 'armv7l':
+	if cpuArchId != 'x86_64' and cpuArchId != 'armv7l' and cpuArchId != 'aarch64':
 		raise Exception('Unsupported CPU architecture: {}'.format(cpuArchId))
 
 ########## Commands ##########
@@ -105,7 +105,6 @@ def configure(conf):
 
 	# FIXME: this is not sane for a lot of environments
 	conf.env.LIBPATH += [
-		'/usr/lib/x86_64-linux-gnu',
 		'/usr/local/lib',
 	]
 
@@ -138,7 +137,14 @@ def configure(conf):
 			'-mfpu=crypto-neon-fp-armv8',
 			'-mfloat-abi=hard',
 		]
+	elif cpuArch == 'aarch64':
+		conf.env.LIBPATH += [ '/usr/lib/aarch64-linux-gnu' ],
+		conf.env.DEFINES += [ '_USE_ARM_NEON' ]
+		tuning = [
+			'-mcpu=cortex-a53',
+		]
 	else:
+		conf.env.LIBPATH += [ '/usr/lib/x86_64-linux-gnu' ],
 		tuning = [
 			'-march=native',
 			'-mtune=native',
@@ -259,7 +265,7 @@ def build(bld):
 
 	#app
 	appExcl = []
-	if cpuArch == 'armv7l':
+	if cpuArch == 'armv7l' or cpuArch == 'aarch64':
 		# We want to ignore the CPU features check, since this relies on x86 CPUID
 		appExcl.append('app/cpufeatures.*')
 	bld.stlib(
@@ -339,7 +345,7 @@ def build(bld):
 
 	# Calculate what we might want to exclude for certain architectures
 	excl=['tsl/version.c', 'tsl/test/*.*']
-	if cpuArch == 'armv7l':
+	if cpuArch == 'armv7l' or cpuArch == 'aarch64':
 		# We want to ignore coro - there's no ARM implementation yet
 		excl.append('tsl/coro/*.*')
 		excl.append('tsl/timer.c')
@@ -355,7 +361,7 @@ def build(bld):
 
 	# Exclude the coroutine tests if we're building for ARM32
 	excl=[]
-	if cpuArch == 'armv7l':
+	if cpuArch == 'armv7l' or cpuArch == 'aarch64':
 		excl.append('tsl/test/test_coro.c')
 		excl.append('tsl/test/test_speed.c')
 	bld.program(
