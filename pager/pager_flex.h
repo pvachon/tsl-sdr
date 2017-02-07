@@ -165,9 +165,24 @@ struct pager_flex_sync_2 {
     uint8_t nr_c;
 
     /**
-     * Sum of samples in dot sequence
+     * Sum of samples in dot sequence, high.
      */
-    int32_t range_avg_sum;
+    int32_t range_avg_sum_high;
+
+    /**
+     * Sum of samples in dot sequence, low
+     */
+    int32_t range_avg_sum_low;
+
+    /**
+     * 
+     */
+    unsigned range_avg_count_high;
+
+    /**
+     *
+     */
+    unsigned range_avg_count_low;
 };
 
 struct bch_code;
@@ -179,9 +194,14 @@ struct bch_code;
  */
 struct pager_flex {
     /**
-     * The range, in samples, for slicing. Used only for 4FSK slicing.
+     * Quantized sample max.
      */
-    int16_t slice_range;
+    int16_t slice_range_high;
+
+    /**
+     * Quantized sample min
+     */
+    int16_t slice_range_low;
 
     /**
      * Callback hit on a complete message
@@ -242,7 +262,6 @@ struct pager_flex {
      * Frequency, in Hertz, of the center of this pager channel
      */
     uint32_t freq_hz;
-
 };
 
 /**

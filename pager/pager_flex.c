@@ -222,7 +222,9 @@ int8_t _pager_flex_slice_4fsk(struct pager_flex *flex, int16_t sample)
 #ifdef _TSL_DEBUG
     TSL_BUG_ON(NULL == flex);
 #endif
+    return 1;
 
+#if 0
     if (sample < 0) {
         if (-sample > flex->slice_range/2) {
             return 0;
@@ -236,6 +238,7 @@ int8_t _pager_flex_slice_4fsk(struct pager_flex *flex, int16_t sample)
             return 3;
         }
     }
+#endif
 }
 
 static
@@ -248,7 +251,10 @@ void _pager_flex_sync_2_reset(struct pager_flex_sync_2 *sync2)
     sync2->nr_dots = 0;
     sync2->c = 0;
     sync2->nr_c = 0;
-    sync2->range_avg_sum = 0;
+    sync2->range_avg_sum_high = 0;
+    sync2->range_avg_sum_low = 0;
+    sync2->range_avg_count_high = 0;
+    sync2->range_avg_count_low = 0;
 }
 
 static
@@ -291,7 +297,8 @@ void _pager_flex_reset_sync(struct pager_flex *flex)
     flex->skip = 0;
     flex->skip_count = 0;
 
-    flex->slice_range = 0;
+    flex->slice_range_high = 0;
+    flex->slice_range_low = 0;
 
     /* Clear the sync tracker */
     _pager_flex_sync_reset(&flex->sync);
@@ -430,8 +437,8 @@ void _pager_flex_sync_update(struct pager_flex_sync *sync, int8_t symbol)
 
     case PAGER_FLEX_SYNC_STATE_FIW:
         if (0 == sync->sample_counter) {
-            sync->fiw <<= 1;
-            sync->fiw |= !!symbol;
+            sync->fiw >>= 1;
+            sync->fiw |= (!!symbol << 31);
 
             sync->bit_counter++;
             if (32 == sync->bit_counter) {
@@ -466,15 +473,26 @@ void _pager_flex_sync2_update(struct pager_flex *flex, int16_t sample)
 
     switch (sync->state) {
     case PAGER_FLEX_SYNC_2_STATE_COMMA:
-        sync->range_avg_sum += abs(sample);
-        DIAG("Dot %d: %d", sync->nr_dots + 1, sample);
+        if (sample > 0) {
+            sync->range_avg_sum_high += sample;
+            sync->range_avg_count_high++;
+        } else {
+            sync->range_avg_sum_low += sample;
+            sync->range_avg_count_low++;
+        }
+
         sync->nr_dots++;
 
         if (coding->sync_2_samples == sync->nr_dots) {
             /* Calculate the swing range for the signal. */
-            flex->slice_range = sync->range_avg_sum/coding->sync_2_samples;
+            flex->slice_range_high = sync->range_avg_sum_high/sync->range_avg_count_high;
+            flex->slice_range_low = sync->range_avg_sum_low/sync->range_avg_count_low;
 
-            DIAG("PAGER_FLEX_SYNC_2_STATE_COMMA -> PAGER_FLEX_SYNC_2_STATE_C (range = %d)", flex->slice_range);
+            DIAG("COMMA: [%d, %d] (%u samples, %u samples)", flex->slice_range_low,
+                    flex->slice_range_high, sync->range_avg_count_high,
+                    sync->range_avg_count_low);
+
+            DIAG("PAGER_FLEX_SYNC_2_STATE_COMMA -> PAGER_FLEX_SYNC_2_STATE_C");// (range = %d)", flex->slice_range);
 
             /* And we're off to state C */
             sync->state = PAGER_FLEX_SYNC_2_STATE_C;
@@ -503,6 +521,40 @@ void _pager_flex_sync2_update(struct pager_flex *flex, int16_t sample)
     case PAGER_FLEX_SYNC_2_STATE_SYNCED:
         PANIC("Should not get to PAGER_FLEX_SYNC_2_STATE_SYNCED");
     }
+}
+
+static
+bool _pager_flex_handle_fiw(struct pager_flex *flex)
+{
+    uint32_t fiw = flex->sync.fiw & 0x7ffffffful,
+             fiw_masked = 0;
+    uint8_t fiw_cksum = 0;
+
+    /* Handle the FIW for this frame */
+    if (0 != bch_code_decode(flex->bch, &fiw)) {
+        /* Reset the sync state -- we couldn't correct the FIW */
+        DIAG("Unable to correct FIW, resetting sync state.");
+        _pager_flex_reset_sync(flex);
+    }
+
+    DIAG("FIW: Corrected %u errors", __builtin_popcount(fiw ^ (flex->sync.fiw & 0x7ffffffful)));
+    DIAG("SYNC2: %u bps, %uFSK (skip = %d)", flex->sync.coding->baud,
+            flex->sync.coding->fsk_levels,
+            flex->sync.coding->sample_skip);
+
+    /* Check the FIW checksum */
+    fiw_masked = fiw & 0x1ffffful;
+    for (size_t nibble = 0; nibble < 6; nibble++) {
+        fiw_cksum += fiw_masked & 0xf;
+        fiw_masked >>= 4;
+    }
+    fiw_cksum &= 0xf;
+
+    DIAG("FIW: FIX: CKSUM=%01x CycleNo=%01x FrameNo=%02x Roam=%s Repeat=%s CalcCksum=%02x",
+            fiw & 0xf, (fiw >> 4) & 0xf, (fiw >> 8) & 0x7f, (fiw >> 15) & 1 ? "Yes" : "No",
+            (fiw >> 16) & 1 ? "Yes" : "No", (unsigned)fiw_cksum);
+
+    return 0xf == fiw_cksum;
 }
 
 aresult_t pager_flex_new(struct pager_flex **pflex, uint32_t freq_hz, pager_flex_on_message_cb_t on_msg)
@@ -569,33 +621,22 @@ aresult_t pager_flex_on_pcm(struct pager_flex *flex, const int16_t *pcm_samples,
                 /* Deliver a sample to the sync state handler, after treating it as a 2FSK symbol */
                 _pager_flex_sync_update(&flex->sync, _pager_flex_slice_2fsk(flex, pcm_samples[i]));
                 if (PAGER_FLEX_SYNC_STATE_SYNCED == flex->sync.state) {
-                    uint32_t fiw = flex->sync.fiw;
-                    flex->state = PAGER_FLEX_STATE_SYNC_2;
+                    if (_pager_flex_handle_fiw(flex)) {
+                        DIAG("PAGER_FLEX_STATE_SYNC_1 -> PAGER_FLEX_STATE_SYNC_2");
 
-                    /* Handle the FIW for this frame */
-                    if (0 != bch_code_decode(flex->bch, &fiw)) {
-                        /* Reset the sync state -- we couldn't correct the FIW */
-                        DIAG("Unable to correct FIW, resetting sync state.");
+                        flex->state = PAGER_FLEX_STATE_SYNC_2;
+                        flex->skip = flex->sync.coding->sample_skip;
+                        flex->skip_count = flex->skip;
+                    } else {
+                        /*  Reset sync state */
                         _pager_flex_reset_sync(flex);
                     }
-
-                    DIAG("FIW: Corrected %u errors", __builtin_popcount((fiw & 0x7ffffffful) ^ flex->sync.fiw));
-                    DIAG("SYNC2: %u bps, %uFSK (skip = %d)", flex->sync.coding->baud,
-                            flex->sync.coding->fsk_levels,
-                            flex->sync.coding->sample_skip);
-                    DIAG("PAGER_FLEX_STATE_SYNC_1 -> PAGER_FLEX_STATE_SYNC_2");
-
-                    /* TODO: process the FIW */
-
-                    flex->skip = flex->sync.coding->sample_skip;
-                    flex->skip_count = flex->skip;
                 }
                 break;
 
             case PAGER_FLEX_STATE_SYNC_2:
-                _pager_flex_sync2_update(flex, pcm_samples[i]);
-
                 DIAG("SAMPLE = %d", pcm_samples[i]);
+                _pager_flex_sync2_update(flex, pcm_samples[i]);
 
 #if 0
                 if (pcm_samples[i] > 0) {

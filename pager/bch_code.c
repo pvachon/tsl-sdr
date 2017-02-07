@@ -321,12 +321,12 @@ int bch_code_decode(struct bch_code *bch_code_data, uint32_t *precd)
     int             aux;
     uint32_t        recd = *precd;
     int retval=0;
+
     /* first form the syndromes */
-    //  printf("s[] = (");
     for (i = 1; i <= 4; i++) {
         s[i] = 0;
         for (j = 0; j < bch_code_data->n; j++) {
-            if ((recd >> j) & 1) {
+            if ((recd >> (bch_code_data->n - 1 - j)) & 1) {
                 s[i] ^= bch_code_data->alpha_to[(i * j) % bch_code_data->n];
             }
         }
@@ -345,7 +345,7 @@ int bch_code_decode(struct bch_code *bch_code_data, uint32_t *precd)
             s3 = (s[1] * 3) % bch_code_data->n;
             if ( s[3] == s3 ) { /* Was it a single error ? */
                 /* Correct the error */
-                recd ^= 1 << s[1];
+                recd ^= 1 << (bch_code_data->n - 1 - s[1]);
             } else {
                 /* Assume two errors occurred and solve
                  * for the coefficients of sigma(x), the
@@ -381,7 +381,7 @@ int bch_code_decode(struct bch_code *bch_code_data, uint32_t *precd)
                 if (count == 2) {
                     /* no. roots = degree of elp hence 2 errors */
                     for (i = 0; i < 2; i++) {
-                        recd ^= (1 << loc[i]);
+                        recd ^= (1 << (bch_code_data->n - 1 - loc[i]));
                     }
                 } else {    /* Cannot solve: Error detection */
                     retval=1;

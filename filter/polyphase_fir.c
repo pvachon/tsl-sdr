@@ -82,6 +82,7 @@ aresult_t polyphase_fir_new(struct polyphase_fir **pfir, size_t nr_coeffs, const
         fir->phase_filters[(i % interpolate) * phase_coeffs + (i / interpolate)] = fir_coeff[i];
     }
 
+#ifdef _DUMP_FILTER_COEFFICIENTS
     for (size_t i = 0; i < fir->nr_phase_filters; i++) {
         printf("\nPhase %4zu: ", i);
         for (size_t j = 0; j < fir->nr_filter_coeffs; j++) {
@@ -89,6 +90,7 @@ aresult_t polyphase_fir_new(struct polyphase_fir **pfir, size_t nr_coeffs, const
         }
     }
     printf("\n");
+#endif /* defined(_DUMP_FILTER_COEFFICIENTS) */
 
     /* Bing, and we're done */
     *pfir = fir;
