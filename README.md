@@ -1,16 +1,16 @@
-#The Standard Library
+# The Standard Library
 
 This is the repository for the Software Defined Radio/DSP-focused version of
 The Standard Library, or TSL.
 
-#Building
+# Building
 
 You will need Python installed. Invoke `./waf configure` to configure the build,
 and `./waf build` to build the tools.
 
 The applications will end up in `build/release/bin`
 
-##Dependencies
+## Dependencies
 
 The TSL currently depends on:
  * ConcurrencyKit (https://github.com/concurrencykit/ck)
@@ -20,11 +20,11 @@ The TSL currently depends on:
 As well, some scripts will use GNUradio (since reimplementing Parks-McClelland
 would be just a waste of time!).
 
-#Tools
+# Tools
 
 There are a number of applications in this repo.
 
-##MultiFM
+## MultiFM
 
 MultiFM is the heart of the TSL distribution for SDR. This allows a user to take
 a broadband chunk of the spectrum and subdivide it into multiple arbitrarily
@@ -38,7 +38,7 @@ should be largely self-explanatory.
 
 Invoke MultiFM with `multifm [configuration file 1] ... [configuration file n]`.
 
-##Resampler
+## Resampler
 
 Resampler is a simple rational resampler. Given an appropriate filter and set of
 command line filters, Resampler will allow a user to perform a rational resampling
@@ -49,12 +49,12 @@ See `resampler -h` for information on the specific parameters to use.
 A script, in `scripts/design_interpolation_filter.py` will generate a filter that
 can be used with Resampler as an input. This script requires GNURadio be installed.
 
-#License
+# License
 
 The TSL, MultiFM and Resampler (as well as libfilter, etc.) are provided under
 two licenses - the GPLv2 and the MIT/X license. You can pick whichever license
 works best for you.
 
-#Author
+# Author
 
 Most of this code was written by Phil Vachon (phil@security-embdedded.com).
