@@ -76,6 +76,16 @@ struct pager_flex_coding {
     uint8_t sym_bits;
 
     /**
+     * Fudge factor applied when performing the sample rate transition.
+     */
+    uint8_t sample_fudge;
+
+    /**
+     * Number of symbols in the data block
+     */
+    uint16_t symbols_per_block;
+
+    /**
      * Slicer function
      */
     pager_flex_slice_sym_func_t slice;
@@ -124,6 +134,8 @@ struct pager_flex_coding _pager_codings[] = {
         .sync_2_samples = 4,
         .sym_bits = 1,
         .slice = _pager_flex_slice_2fsk,
+        .sample_fudge = 0,
+        .symbols_per_block = 2816,
     },
     {
         .seq_a = 0x84e7,
@@ -133,6 +145,8 @@ struct pager_flex_coding _pager_codings[] = {
         .sync_2_samples = 24,
         .sym_bits = 1,
         .slice = _pager_flex_slice_2fsk,
+        .sample_fudge = 2,
+        .symbols_per_block = 5632,
     },
     {
         .seq_a = 0x4f79,
@@ -142,6 +156,8 @@ struct pager_flex_coding _pager_codings[] = {
         .sync_2_samples = 12,
         .sym_bits = 2,
         .slice = _pager_flex_slice_4fsk,
+        .sample_fudge = 0,
+        .symbols_per_block = 2816,
     },
     {
         .seq_a = 0x215f,
@@ -151,6 +167,8 @@ struct pager_flex_coding _pager_codings[] = {
         .sync_2_samples = 32,
         .sym_bits = 2,
         .slice = _pager_flex_slice_4fsk,
+        .sample_fudge = 2,
+        .symbols_per_block = 5632,
     },
 };
 
@@ -222,22 +240,35 @@ int8_t _pager_flex_slice_4fsk(struct pager_flex *flex, int16_t sample)
 #ifdef _TSL_DEBUG
     TSL_BUG_ON(NULL == flex);
 #endif
-    return 1;
 
-#if 0
+    /* Adjust the sample per the offset determined during the sync phase */
+    sample -= flex->sample_delta;
+
     if (sample < 0) {
-        if (-sample > flex->slice_range/2) {
+        if (-sample > flex->sample_range/4) {
             return 0;
         } else {
             return 1;
         }
     } else {
-        if (sample > flex->slice_range/2) {
+        if (sample > flex->sample_range/4) {
             return 2;
         } else {
             return 3;
         }
     }
+}
+
+static
+void _pager_flex_block_reset(struct pager_flex_block *block)
+{
+#ifdef _TSL_DEBUG
+    TSL_BUG_ON(NULL == block);
+#endif
+
+    block->nr_symbols = 0;
+#ifdef _TSL_DEBUG
+    memset(&block->phase, 0, sizeof(block->phase));
 #endif
 }
 
@@ -250,11 +281,8 @@ void _pager_flex_sync_2_reset(struct pager_flex_sync_2 *sync2)
     sync2->state = PAGER_FLEX_SYNC_2_STATE_COMMA;
     sync2->nr_dots = 0;
     sync2->c = 0;
+    sync2->inv_c = 0;
     sync2->nr_c = 0;
-    sync2->range_avg_sum_high = 0;
-    sync2->range_avg_sum_low = 0;
-    sync2->range_avg_count_high = 0;
-    sync2->range_avg_count_low = 0;
 }
 
 static
@@ -276,6 +304,11 @@ void _pager_flex_sync_reset(struct pager_flex_sync *sync)
     sync->inv_a = 0;
     sync->fiw = 0;
     sync->coding = NULL;
+
+    sync->range_avg_sum_high = 0;
+    sync->range_avg_sum_low = 0;
+    sync->range_avg_count_high = 0;
+    sync->range_avg_count_low = 0;
 }
 
 /**
@@ -287,22 +320,19 @@ void _pager_flex_reset_sync(struct pager_flex *flex)
 #ifdef _TSL_DEBUG
 
 #endif
-    flex->symbol_counter = 0;
     flex->symbol_samples = 1;
 
     flex->state = PAGER_FLEX_STATE_SYNC_1;
-    /* Flex is always 1600 baud initially */
-    flex->baud_rate = 1600;
-    flex->symbol_counter = 0;
     flex->skip = 0;
     flex->skip_count = 0;
 
-    flex->slice_range_high = 0;
-    flex->slice_range_low = 0;
+    flex->sample_range = 0;
+    flex->sample_delta = 0;
 
     /* Clear the sync tracker */
     _pager_flex_sync_reset(&flex->sync);
     _pager_flex_sync_2_reset(&flex->sync_2);
+    _pager_flex_block_reset(&flex->block);
 }
 
 static
@@ -337,14 +367,18 @@ bool _pager_flex_sync_check_baud(struct pager_flex_sync *sync)
  * This function updates the state of the FLEX sync tracker, but not of the decoder itself.
  */
 static
-void _pager_flex_sync_update(struct pager_flex_sync *sync, int8_t symbol)
+void _pager_flex_sync_update(struct pager_flex *flex, int16_t sample)
 {
+    struct pager_flex_sync *sync = NULL;
+    int8_t symbol = INT8_MIN;
 #ifdef _TSL_DEBUG
-    TSL_BUG_ON(NULL == sync);
-    TSL_BUG_ON(0 > symbol || 1 < symbol);
+    TSL_BUG_ON(NULL == flex);
 #endif
 
+    sync = &flex->sync;
+
     sync->sample_counter = (sync->sample_counter + 1) % 10;
+    symbol = _pager_flex_slice_2fsk(flex, sample);
 
     switch (sync->state) {
     case PAGER_FLEX_SYNC_STATE_SEARCH_BS1:
@@ -379,9 +413,11 @@ void _pager_flex_sync_update(struct pager_flex_sync *sync, int8_t symbol)
                 sync->sample_counter = sync->bit_counter / 2;
 
                 DIAG("BS1 -> A (%u instances of BS1, eye = %u)", sync->bit_counter, sync->bit_counter);
+#if 0
                 for (size_t i = 0; i < 10; i++) {
                     DIAG("  SW[%2zu] = 0x%08x", i, sync->sync_words[(sync->sample_counter - i) % 10]);
                 }
+#endif
             }
             sync->bit_counter = 0;
         }
@@ -391,6 +427,14 @@ void _pager_flex_sync_update(struct pager_flex_sync *sync, int8_t symbol)
         if (0 == sync->sample_counter) {
             sync->a <<= 1;
             sync->a |= !!symbol;
+
+            if (sample > 0) {
+                sync->range_avg_sum_high += sample;
+                sync->range_avg_count_high++;
+            } else {
+                sync->range_avg_sum_low += sample;
+                sync->range_avg_count_low++;
+            }
 
             sync->bit_counter++;
             if (32 == sync->bit_counter) {
@@ -406,6 +450,14 @@ void _pager_flex_sync_update(struct pager_flex_sync *sync, int8_t symbol)
             sync->b <<= 1;
             sync->b |= !!symbol;
 
+            if (sample > 0) {
+                sync->range_avg_sum_high += sample;
+                sync->range_avg_count_high++;
+            } else {
+                sync->range_avg_sum_low += sample;
+                sync->range_avg_count_low++;
+            }
+
             sync->bit_counter++;
             if (16 == sync->bit_counter) {
                 DIAG("B -> INV_A B = %04x", sync->b);
@@ -420,6 +472,14 @@ void _pager_flex_sync_update(struct pager_flex_sync *sync, int8_t symbol)
         if (0 == sync->sample_counter) {
             sync->inv_a <<= 1;
             sync->inv_a |= !!symbol;
+
+            if (sample > 0) {
+                sync->range_avg_sum_high += sample;
+                sync->range_avg_count_high++;
+            } else {
+                sync->range_avg_sum_low += sample;
+                sync->range_avg_count_low++;
+            }
 
             sync->bit_counter++;
             if (32 == sync->bit_counter) {
@@ -440,9 +500,29 @@ void _pager_flex_sync_update(struct pager_flex_sync *sync, int8_t symbol)
             sync->fiw >>= 1;
             sync->fiw |= (!!symbol << 31);
 
+            if (sample > 0) {
+                sync->range_avg_sum_high += sample;
+                sync->range_avg_count_high++;
+            } else {
+                sync->range_avg_sum_low += sample;
+                sync->range_avg_count_low++;
+            }
+
             sync->bit_counter++;
             if (32 == sync->bit_counter) {
-                DIAG("FIW -> SYNCED FIW = %08x", sync->fiw);
+                /* Calculate the swing range for the signal. We have to do this heuristically
+                 * for 4FSK unfortunately.
+                 */
+                int16_t slice_range_high = sync->range_avg_sum_high/(int)sync->range_avg_count_high,
+                        slice_range_low = sync->range_avg_sum_low/(int)sync->range_avg_count_low;
+
+                flex->sample_range = slice_range_high - slice_range_low;
+                flex->sample_delta = slice_range_high - (int)flex->sample_range/2;
+
+                DIAG("FIW -> SYNCED (FIW: %08x sliceHi: %d sliceLo: %d sliceRange: %d, sampleDelta: %d",
+                        sync->fiw, slice_range_high, slice_range_low, flex->sample_range,
+                        flex->sample_delta);
+
                 /* Check all the sync block state to make sure it lines up for Sync 1 state. */
                 sync->state = PAGER_FLEX_SYNC_STATE_SYNCED;
             }
@@ -473,27 +553,10 @@ void _pager_flex_sync2_update(struct pager_flex *flex, int16_t sample)
 
     switch (sync->state) {
     case PAGER_FLEX_SYNC_2_STATE_COMMA:
-        if (sample > 0) {
-            sync->range_avg_sum_high += sample;
-            sync->range_avg_count_high++;
-        } else {
-            sync->range_avg_sum_low += sample;
-            sync->range_avg_count_low++;
-        }
-
         sync->nr_dots++;
 
         if (coding->sync_2_samples == sync->nr_dots) {
-            /* Calculate the swing range for the signal. */
-            flex->slice_range_high = sync->range_avg_sum_high/sync->range_avg_count_high;
-            flex->slice_range_low = sync->range_avg_sum_low/sync->range_avg_count_low;
-
-            DIAG("COMMA: [%d, %d] (%u samples, %u samples)", flex->slice_range_low,
-                    flex->slice_range_high, sync->range_avg_count_high,
-                    sync->range_avg_count_low);
-
             DIAG("PAGER_FLEX_SYNC_2_STATE_COMMA -> PAGER_FLEX_SYNC_2_STATE_C");// (range = %d)", flex->slice_range);
-
             /* And we're off to state C */
             sync->state = PAGER_FLEX_SYNC_2_STATE_C;
         }
@@ -501,25 +564,65 @@ void _pager_flex_sync2_update(struct pager_flex *flex, int16_t sample)
         break;
     case PAGER_FLEX_SYNC_2_STATE_C: {
             int8_t sym = coding->slice(flex, sample);
-            DIAG("SYM: %d", sym);
             sync->c <<= coding->sym_bits;
             sync->c |= sym;
 
             sync->nr_c += coding->sym_bits;
 
             if (sync->nr_c == 16) {
-                DIAG("PAGER_FLEX_SYNC_2_STATE_C -> PAGER_FLEX_SYNC_2_STATE_SYNCED (c = 0x%02x)", sync->c);
-                sync->state = PAGER_FLEX_SYNC_2_STATE_SYNCED;
+                DIAG("PAGER_FLEX_SYNC_2_STATE_C -> PAGER_FLEX_SYNC_2_STATE_INV_COMMA (c = 0x%02x)", sync->c);
+                sync->state = PAGER_FLEX_SYNC_2_STATE_INV_COMMA;
+                sync->nr_dots = 0;
             }
 
         }
         break;
     case PAGER_FLEX_SYNC_2_STATE_INV_COMMA:
+        sync->nr_dots++;
+
+        if (coding->sync_2_samples == sync->nr_dots) {
+            DIAG("PAGER_FLEX_SYNC_2_STATE_INV_COMMA -> PAGER_FLEX_SYNC_2_STATE_INV_C");
+            sync->state = PAGER_FLEX_SYNC_2_STATE_INV_C;
+            sync->nr_c = 0;
+        }
         break;
-    case PAGER_FLEX_SYNC_2_STATE_INV_C:
+    case PAGER_FLEX_SYNC_2_STATE_INV_C: {
+            int8_t sym = coding->slice(flex, sample);
+            sync->inv_c <<= coding->sym_bits;
+            sync->inv_c |= sym;
+            sync->nr_c += coding->sym_bits;
+
+            if (sync->nr_c == 16) {
+                sync->state = PAGER_FLEX_SYNC_2_STATE_SYNCED;
+                /* TODO: we should check C, INV_C and generate a warning if they're bad at this point. */
+            }
+        }
         break;
     case PAGER_FLEX_SYNC_2_STATE_SYNCED:
         PANIC("Should not get to PAGER_FLEX_SYNC_2_STATE_SYNCED");
+    }
+}
+
+static
+void _pager_flex_block_update(struct pager_flex *flex, int16_t sample)
+{
+    struct pager_flex_block *blk = NULL;
+    struct pager_flex_coding *coding = NULL;
+#ifdef _TSL_DEBUG
+    TSL_BUG_ON(NULL == flex);
+#endif
+    blk = &flex->block;
+    coding = flex->sync.coding;
+#ifdef _TSL_DEBUG
+    TSL_BUG_ON(NULL == coding);
+#endif
+
+    blk->nr_symbols++;
+
+    if (blk->nr_symbols == coding->symbols_per_block) {
+        /* Process the block data */
+        /* Reset to the idle/sync 1 search state */
+        _pager_flex_reset_sync(flex);
     }
 }
 
@@ -618,15 +721,25 @@ aresult_t pager_flex_on_pcm(struct pager_flex *flex, const int16_t *pcm_samples,
             flex->skip_count = flex->skip;
             switch (flex->state) {
             case PAGER_FLEX_STATE_SYNC_1:
-                /* Deliver a sample to the sync state handler, after treating it as a 2FSK symbol */
-                _pager_flex_sync_update(&flex->sync, _pager_flex_slice_2fsk(flex, pcm_samples[i]));
+                /* Deliver a sample to the sync state handler */
+                _pager_flex_sync_update(flex, pcm_samples[i]);
+
+                if (flex->sync.state == PAGER_FLEX_SYNC_STATE_A && flex->sync.sample_counter == 0) {
+                    if (pcm_samples[i] > 0) {
+                        ((int16_t *)pcm_samples)[i] = 8192;
+                    } else {
+                        ((int16_t *)pcm_samples)[i] = -8192;
+                    }
+
+                }
+
                 if (PAGER_FLEX_SYNC_STATE_SYNCED == flex->sync.state) {
                     if (_pager_flex_handle_fiw(flex)) {
                         DIAG("PAGER_FLEX_STATE_SYNC_1 -> PAGER_FLEX_STATE_SYNC_2");
 
                         flex->state = PAGER_FLEX_STATE_SYNC_2;
                         flex->skip = flex->sync.coding->sample_skip;
-                        flex->skip_count = flex->skip;
+                        flex->skip_count = flex->skip + flex->sync.coding->sample_fudge;
                     } else {
                         /*  Reset sync state */
                         _pager_flex_reset_sync(flex);
@@ -635,16 +748,7 @@ aresult_t pager_flex_on_pcm(struct pager_flex *flex, const int16_t *pcm_samples,
                 break;
 
             case PAGER_FLEX_STATE_SYNC_2:
-                DIAG("SAMPLE = %d", pcm_samples[i]);
                 _pager_flex_sync2_update(flex, pcm_samples[i]);
-
-#if 0
-                if (pcm_samples[i] > 0) {
-                    ((int16_t *)pcm_samples)[i] = INT16_MAX;
-                } else {
-                    ((int16_t *)pcm_samples)[i] = INT16_MIN;
-                }
-#endif
 
                 if (PAGER_FLEX_SYNC_2_STATE_SYNCED == flex->sync_2.state) {
                     /* Move along to processing the following block */
@@ -655,8 +759,8 @@ aresult_t pager_flex_on_pcm(struct pager_flex *flex, const int16_t *pcm_samples,
                 break;
 
             case PAGER_FLEX_STATE_BLOCK:
-                /* For now, reset to the sync phase */
-                _pager_flex_reset_sync(flex);
+                _pager_flex_block_update(flex, pcm_samples[i]);
+                break;
             }
         } else {
             /* Skip this sample, decrement the skip counter */

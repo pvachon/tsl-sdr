@@ -109,6 +109,26 @@ struct pager_flex_sync {
     uint32_t inv_a;
     uint32_t fiw;
     struct pager_flex_coding *coding;
+
+    /**
+     * Sum of samples in sequence, high.
+     */
+    int32_t range_avg_sum_high;
+
+    /**
+     * Sum of samples in sequence, low
+     */
+    int32_t range_avg_sum_low;
+
+    /**
+     * 
+     */
+    unsigned range_avg_count_high;
+
+    /**
+     *
+     */
+    unsigned range_avg_count_low;
 };
 
 enum pager_flex_sync_2_state {
@@ -160,29 +180,49 @@ struct pager_flex_sync_2 {
     uint16_t c;
 
     /**
+     * The inverse C value we've accumulated (diagnostic only)
+     */
+    uint16_t inv_c;
+
+    /**
      * Number of bits of C we've processed
      */
     uint8_t nr_c;
+};
+
+/**
+ * Maximum number of words in a phase.
+ */
+#define PAGER_FLEX_PHASE_WORDS          88
+
+/**
+ * A phase of FLEX data
+ */
+struct pager_flex_phase {
+    uint32_t phase_words[88];
+    uint8_t cur_bit;
+    uint8_t cur_word;
+};
+
+#define PAGER_FLEX_PHASE_A              0
+#define PAGER_FLEX_PHASE_B              1
+#define PAGER_FLEX_PHASE_C              2
+#define PAGER_FLEX_PHASE_D              3
+#define PAGER_FLEX_PHASE_MAX            4
+
+/**
+ * State for the block accumulation state
+ */
+struct pager_flex_block {
+    /**
+     * The individual data phases
+     */
+    struct pager_flex_phase phase[PAGER_FLEX_PHASE_MAX];
 
     /**
-     * Sum of samples in dot sequence, high.
+     * The number of symbols accumulated
      */
-    int32_t range_avg_sum_high;
-
-    /**
-     * Sum of samples in dot sequence, low
-     */
-    int32_t range_avg_sum_low;
-
-    /**
-     * 
-     */
-    unsigned range_avg_count_high;
-
-    /**
-     *
-     */
-    unsigned range_avg_count_low;
+    int32_t nr_symbols;
 };
 
 struct bch_code;
@@ -194,14 +234,14 @@ struct bch_code;
  */
 struct pager_flex {
     /**
-     * Quantized sample max.
+     * Range from minimum to maximum sample value
      */
-    int16_t slice_range_high;
+    int16_t sample_range;
 
     /**
-     * Quantized sample min
+     * Difference to subtract from each sample
      */
-    int16_t slice_range_low;
+    int16_t sample_delta;
 
     /**
      * Callback hit on a complete message
@@ -219,24 +259,14 @@ struct pager_flex {
     struct pager_flex_sync_2 sync_2;
 
     /**
+     * The block acquisition phase state
+     */
+    struct pager_flex_block block;
+
+    /**
      * State for the BCH Error Corrector for the BCH(31, 23) code FLEX uses
      */
     struct bch_code *bch;
-
-    /**
-     * The baud rate
-     */
-    uint16_t baud_rate;
-
-    /**
-     * Current modulation. This always starts in 2FSK, but can move to 4FSK depending on the sync word contents.
-     */
-    enum pager_flex_modulation modulation;
-
-    /**
-     * Symbol counter. This is used to count symbols dependant on the state the FLEX receiver is in
-     */
-    unsigned int symbol_counter;
 
     /**
      * The current state of the FLEX receiver
@@ -246,12 +276,12 @@ struct pager_flex {
     /**
      * The number of samples to skip before sampling for slicing
      */
-    uint16_t skip;
+    int16_t skip;
 
     /**
      * The skip count
      */
-    uint16_t skip_count;
+    int16_t skip_count;
 
     /**
      * The symbol sample rate. The number of samples that represents a single symbol
