@@ -21,6 +21,7 @@
 #include <pager/pager.h>
 #include <pager/pager_priv.h>
 #include <pager/pager_flex.h>
+#include <pager/pager_flex_priv.h>
 #include <pager/bch_code.h>
 
 #include <tsl/errors.h>
@@ -35,74 +36,8 @@
 #include <time.h>
 #include <stdlib.h>
 
-struct pager_flex;
 static inline int8_t _pager_flex_slice_2fsk(struct pager_flex *flex, int16_t sample);
 static inline int8_t _pager_flex_slice_4fsk(struct pager_flex *flex, int16_t sample);
-
-/**
- * Slice function using the FLEX pager state.
- */
-typedef int8_t (*pager_flex_slice_sym_func_t)(struct pager_flex *flex, int16_t sample);
-
-struct pager_flex_coding {
-    /**
-     * The identifier A-code sequence
-     */
-    uint16_t seq_a;
-
-    /**
-     * The baud rate
-     */
-    uint16_t baud;
-
-    /**
-     * The number of FSK levels this coding presents
-     */
-    uint8_t fsk_levels;
-
-    /**
-     * The number of samples we'll skip when we shift to Sync 2 and beyond.
-     */
-    uint8_t sample_skip;
-
-    /**
-     * Number of samples the Sync 2 phase has of the standard 0xa sequence
-     */
-    uint8_t sync_2_samples;
-
-    /**
-     * Number of bits in a symbol
-     */
-    uint8_t sym_bits;
-
-    /**
-     * Fudge factor applied when performing the sample rate transition.
-     */
-    uint8_t sample_fudge;
-
-    /**
-     * Number of symbols in the data block
-     */
-    uint16_t symbols_per_block;
-
-    /**
-     * Slicer function
-     */
-    pager_flex_slice_sym_func_t slice;
-};
-
-/**
- * Extract various fields from the Frame Information Word
- *@{
- */
-#define PAGER_FLEX_FIW_CHKSUM(x)                ((x) & 0xf)
-#define PAGER_FLEX_FIW_CYCLE(x)                 (((x) >> 4) & 0xf)
-#define PAGER_FLEX_FIW_FRAME(x)                 (((x) >> 8) & 0x7f)
-#define PAGER_FLEX_FIW_ROAMING(x)               (!!((x) & (1 << 15)))
-#define PAGER_FLEX_FIW_REPEAT(x)                (!!((x) & (1 << 16)))
-/**
- *@}
- */
 
 /**
  * Various odds and ends of FLEX frame sync constants. These are used for the SYNC 1 phase
@@ -136,6 +71,7 @@ struct pager_flex_coding _pager_codings[] = {
         .slice = _pager_flex_slice_2fsk,
         .sample_fudge = 0,
         .symbols_per_block = 2816,
+        .nr_phases = 1,
     },
     {
         .seq_a = 0x84e7,
@@ -147,6 +83,7 @@ struct pager_flex_coding _pager_codings[] = {
         .slice = _pager_flex_slice_2fsk,
         .sample_fudge = 2,
         .symbols_per_block = 5632,
+        .nr_phases = 2,
     },
     {
         .seq_a = 0x4f79,
@@ -158,6 +95,7 @@ struct pager_flex_coding _pager_codings[] = {
         .slice = _pager_flex_slice_4fsk,
         .sample_fudge = 0,
         .symbols_per_block = 2816,
+        .nr_phases = 2,
     },
     {
         .seq_a = 0x215f,
@@ -169,6 +107,7 @@ struct pager_flex_coding _pager_codings[] = {
         .slice = _pager_flex_slice_4fsk,
         .sample_fudge = 2,
         .symbols_per_block = 5632,
+        .nr_phases = 4,
     },
 };
 
@@ -176,36 +115,6 @@ struct pager_flex_coding _pager_codings[] = {
  * The number of pager codings we support
  */
 #define NR_PAGER_CODINGS (sizeof(_pager_codings)/sizeof(struct pager_flex_coding))
-
-/**
- * The BS1 pattern
- */
-#define PAGER_FLEX_SYNC_BS1                 0xaaaaaaaaul
-
-/**
- * Value always present in 'A' binary pattern in SYNC 1
- */
-#define PAGER_FLEX_SYNC_MAGIC_A             0x5939ul
-
-/**
- * Value always present after the intial A sync magic
- */
-#define PAGER_FLEX_SYNC_MAGIC_B             0x5555ul
-
-/**
- * Sync 2 is performed at the speed specified in the magic of Sync 1. This phase allows the
- * receiver to synchronize itself with the transmitter at the target transmission speed.
- *
- * This phase is a variable number of bits long, depending on the sync speed.
- *
- * The phase always has 2 sync phases -- BS2/C, and inv BS2/C. The latter is simply transmitted
- * as an inverse of the former.
- *
- * In our implementation, we use this phase to train the slicer for 4FSK. If the encoding is
- * 2 FSK, we'll continue to use a binary slicer.
- */
-
-#define PAGER_FLEX_SYNC_2_MAGIC_C           0xed84
 
 /**
  * Slice the given sample into a 2FSK symbol.
@@ -266,7 +175,10 @@ void _pager_flex_block_reset(struct pager_flex_block *block)
     TSL_BUG_ON(NULL == block);
 #endif
 
+    /* Reset the block state */
     block->nr_symbols = 0;
+    block->phase_ff = false;
+
 #ifdef _TSL_DEBUG
     memset(&block->phase, 0, sizeof(block->phase));
 #endif
@@ -320,16 +232,18 @@ void _pager_flex_reset_sync(struct pager_flex *flex)
 #ifdef _TSL_DEBUG
 
 #endif
+    /* Stick to 1 sample/symbol, used in searching for the sync word */
     flex->symbol_samples = 1;
 
     flex->state = PAGER_FLEX_STATE_SYNC_1;
+
     flex->skip = 0;
     flex->skip_count = 0;
 
     flex->sample_range = 0;
     flex->sample_delta = 0;
 
-    /* Clear the sync tracker */
+    /* Clear the sync trackers and block state trackers */
     _pager_flex_sync_reset(&flex->sync);
     _pager_flex_sync_2_reset(&flex->sync_2);
     _pager_flex_block_reset(&flex->block);
@@ -413,11 +327,6 @@ void _pager_flex_sync_update(struct pager_flex *flex, int16_t sample)
                 sync->sample_counter = sync->bit_counter / 2;
 
                 DIAG("BS1 -> A (%u instances of BS1, eye = %u)", sync->bit_counter, sync->bit_counter);
-#if 0
-                for (size_t i = 0; i < 10; i++) {
-                    DIAG("  SW[%2zu] = 0x%08x", i, sync->sync_words[(sync->sample_counter - i) % 10]);
-                }
-#endif
             }
             sync->bit_counter = 0;
         }
@@ -498,7 +407,7 @@ void _pager_flex_sync_update(struct pager_flex *flex, int16_t sample)
     case PAGER_FLEX_SYNC_STATE_FIW:
         if (0 == sync->sample_counter) {
             sync->fiw >>= 1;
-            sync->fiw |= (!!symbol << 31);
+            sync->fiw |= !!symbol << 31;
 
             if (sample > 0) {
                 sync->range_avg_sum_high += sample;
@@ -556,7 +465,7 @@ void _pager_flex_sync2_update(struct pager_flex *flex, int16_t sample)
         sync->nr_dots++;
 
         if (coding->sync_2_samples == sync->nr_dots) {
-            DIAG("PAGER_FLEX_SYNC_2_STATE_COMMA -> PAGER_FLEX_SYNC_2_STATE_C");// (range = %d)", flex->slice_range);
+            DIAG("PAGER_FLEX_SYNC_2_STATE_COMMA -> PAGER_FLEX_SYNC_2_STATE_C");
             /* And we're off to state C */
             sync->state = PAGER_FLEX_SYNC_2_STATE_C;
         }
@@ -574,7 +483,6 @@ void _pager_flex_sync2_update(struct pager_flex *flex, int16_t sample)
                 sync->state = PAGER_FLEX_SYNC_2_STATE_INV_COMMA;
                 sync->nr_dots = 0;
             }
-
         }
         break;
     case PAGER_FLEX_SYNC_2_STATE_INV_COMMA:
@@ -604,10 +512,60 @@ void _pager_flex_sync2_update(struct pager_flex *flex, int16_t sample)
 }
 
 static
+void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
+{
+    struct pager_flex_block *blk = NULL;
+    struct pager_flex_phase *phs = NULL;
+    uint32_t biw = 0,
+             raw_biw = 0;
+#ifdef _TSL_DEBUG
+    TSL_BUG_ON(NULL == flex);
+    TSL_BUG_ON(phase_id >= PAGER_FLEX_PHASE_MAX);
+#endif
+
+    blk = &flex->block;
+    phs = &blk->phase[phase_id];
+
+    TSL_BUG_ON(0 == phs->cur_word);
+    if (0 != phs->cur_bit) {
+        DIAG("WARNING: current bit ID is %u", phs->cur_bit);
+    }
+
+    /* Grab the BIW, and correct it */
+    biw = raw_biw = phs->phase_words[0] & 0x7ffffffful;
+    if (bch_code_decode(flex->bch, &biw)) {
+        /* Skip processing the rest of this phase */
+        DIAG("PHASE %u: Skipping (could not correct BIW %08x)", phase_id, raw_biw);
+        goto done;
+    }
+    DIAG("PHASE %u: BIW: %08x -> %08x", phase_id, raw_biw, biw);
+
+done:
+    return;
+}
+
+static
+void _pager_flex_phase_append_bit(struct pager_flex_phase *phase, bool bit)
+{
+#ifdef _TSL_DEBUG
+    TSL_BUG_ON(NULL == phase);
+#endif
+    phase->phase_words[phase->cur_word] >>= 1;
+    phase->phase_words[phase->cur_word] |= ((uint32_t)(!!bit)) << 31;
+
+    /* Update the state of the phase tracker */
+    if (32 == ++phase->cur_bit) {
+        phase->cur_bit = 0;
+        phase->cur_word++;
+    }
+}
+
+static
 void _pager_flex_block_update(struct pager_flex *flex, int16_t sample)
 {
     struct pager_flex_block *blk = NULL;
     struct pager_flex_coding *coding = NULL;
+    int8_t symbol = 0;
 #ifdef _TSL_DEBUG
     TSL_BUG_ON(NULL == flex);
 #endif
@@ -617,10 +575,74 @@ void _pager_flex_block_update(struct pager_flex *flex, int16_t sample)
     TSL_BUG_ON(NULL == coding);
 #endif
 
+    symbol = coding->slice(flex, sample);
+#ifdef _DUMP_SAMPLE_CODES
+    fprintf(stderr, "%d (sample = %d)\n", symbol, sample - flex->sample_delta);
+#endif
+
+    /* Put the symbol bit(s) in the right phase */
+    switch (coding->nr_phases) {
+    case 1:
+        TSL_BUG_ON(coding->sym_bits != 1);
+        /* Always phase A */
+        _pager_flex_phase_append_bit(&blk->phase[PAGER_FLEX_PHASE_A], (1 == symbol));
+        break;
+    case 2:
+        /* There are two phases in the current coding, Phase A and Phase C, so fill them in */
+        if (2 == coding->fsk_levels) {
+            struct pager_flex_phase *phase = NULL;
+            /* Write alternating symbols to the appropriate phase */
+
+            if (false == blk->phase_ff) {
+                phase = &blk->phase[PAGER_FLEX_PHASE_A];
+            } else {
+                phase = &blk->phase[PAGER_FLEX_PHASE_C];
+            }
+
+            _pager_flex_phase_append_bit(phase, (1 == symbol));
+            blk->phase_ff = !blk->phase_ff;
+        } else {
+            TSL_BUG_ON(coding->sym_bits != 2);
+            /* Break apart the symbol */
+            _pager_flex_phase_append_bit(&blk->phase[PAGER_FLEX_PHASE_A], !!(symbol & 2));
+            _pager_flex_phase_append_bit(&blk->phase[PAGER_FLEX_PHASE_C], !!(symbol & 1));
+        }
+        break;
+    case 4:
+        TSL_BUG_ON(2 != coding->sym_bits);
+        if (false == blk->phase_ff) {
+            _pager_flex_phase_append_bit(&blk->phase[PAGER_FLEX_PHASE_A], !!(symbol & 2));
+            _pager_flex_phase_append_bit(&blk->phase[PAGER_FLEX_PHASE_B], !!(symbol & 1));
+        } else {
+            _pager_flex_phase_append_bit(&blk->phase[PAGER_FLEX_PHASE_C], !!(symbol & 2));
+            _pager_flex_phase_append_bit(&blk->phase[PAGER_FLEX_PHASE_D], !!(symbol & 1));
+        }
+        blk->phase_ff = !blk->phase_ff;
+        break;
+    default:
+        PANIC("Unknown number of phases for FLEX coding: %u", coding->nr_phases);
+    }
+
     blk->nr_symbols++;
 
     if (blk->nr_symbols == coding->symbols_per_block) {
         /* Process the block data */
+        switch (coding->nr_phases) {
+        case 1:
+            _pager_flex_phase_process(flex, PAGER_FLEX_PHASE_A);
+            break;
+        case 2:
+            _pager_flex_phase_process(flex, PAGER_FLEX_PHASE_A);
+            _pager_flex_phase_process(flex, PAGER_FLEX_PHASE_C);
+            break;
+        case 4:
+            _pager_flex_phase_process(flex, PAGER_FLEX_PHASE_A);
+            _pager_flex_phase_process(flex, PAGER_FLEX_PHASE_B);
+            _pager_flex_phase_process(flex, PAGER_FLEX_PHASE_C);
+            _pager_flex_phase_process(flex, PAGER_FLEX_PHASE_D);
+            break;
+        }
+
         /* Reset to the idle/sync 1 search state */
         _pager_flex_reset_sync(flex);
     }
@@ -680,6 +702,8 @@ aresult_t pager_flex_new(struct pager_flex **pflex, uint32_t freq_hz, pager_flex
     flex->freq_hz = freq_hz;
     flex->on_msg = on_msg;
 
+    _pager_flex_reset_sync(flex);
+
     *pflex = flex;
 
 done:
@@ -724,15 +748,6 @@ aresult_t pager_flex_on_pcm(struct pager_flex *flex, const int16_t *pcm_samples,
                 /* Deliver a sample to the sync state handler */
                 _pager_flex_sync_update(flex, pcm_samples[i]);
 
-                if (flex->sync.state == PAGER_FLEX_SYNC_STATE_A && flex->sync.sample_counter == 0) {
-                    if (pcm_samples[i] > 0) {
-                        ((int16_t *)pcm_samples)[i] = 8192;
-                    } else {
-                        ((int16_t *)pcm_samples)[i] = -8192;
-                    }
-
-                }
-
                 if (PAGER_FLEX_SYNC_STATE_SYNCED == flex->sync.state) {
                     if (_pager_flex_handle_fiw(flex)) {
                         DIAG("PAGER_FLEX_STATE_SYNC_1 -> PAGER_FLEX_STATE_SYNC_2");
@@ -748,6 +763,7 @@ aresult_t pager_flex_on_pcm(struct pager_flex *flex, const int16_t *pcm_samples,
                 break;
 
             case PAGER_FLEX_STATE_SYNC_2:
+                /* Deliver the sample to the Sync 2 state handler (fast sync) */
                 _pager_flex_sync2_update(flex, pcm_samples[i]);
 
                 if (PAGER_FLEX_SYNC_2_STATE_SYNCED == flex->sync_2.state) {
@@ -759,6 +775,7 @@ aresult_t pager_flex_on_pcm(struct pager_flex *flex, const int16_t *pcm_samples,
                 break;
 
             case PAGER_FLEX_STATE_BLOCK:
+                /* Update and accumulate block state */
                 _pager_flex_block_update(flex, pcm_samples[i]);
                 break;
             }
