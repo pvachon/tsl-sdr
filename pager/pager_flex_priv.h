@@ -178,9 +178,24 @@ struct pager_flex_sync_2 {
  * A phase of FLEX data. Each phase contains 88 words, across 11 blocks.
  */
 struct pager_flex_phase {
+    /**
+     * Raw words, de-interleaved, for this phase
+     */
     uint32_t phase_words[PAGER_FLEX_PHASE_WORDS];
+
+    /**
+     * Current bit within the current word
+     */
     uint8_t cur_bit;
+
+    /**
+     * The current word being filled in
+     */
     uint8_t cur_word;
+
+    /**
+     * The base word, to determine within phase_words where cur_word is relative to.
+     */
     uint8_t base_word;
 };
 
@@ -227,9 +242,14 @@ struct pager_flex {
     int16_t sample_delta;
 
     /**
-     * Callback hit on a complete message
+     * Callback hit on a complete alphanumeric message
      */
-    pager_flex_on_message_cb_t on_msg;
+    pager_flex_on_alnum_msg_func_t on_alnum_msg;
+
+    /**
+     * Callback hit on a complete numeric message
+     */
+    pager_flex_on_num_msg_func_t on_num_msg;
 
     /**
      * Synchronization state for the FLEX message stream
@@ -275,6 +295,26 @@ struct pager_flex {
      * Frequency, in Hertz, of the center of this pager channel
      */
     uint32_t freq_hz;
+
+    /**
+     * The current cycle number
+     */
+    uint8_t cycle_id;
+
+    /**
+     * The current frame number
+     */
+    uint8_t frame_id;
+
+    /**
+     * Message buffer (for ASCII decoding message bodies)
+     */
+    char msg_buf[256];
+
+    /**
+     * Current length of the valid message in the message buffer.
+     */
+    size_t msg_len;
 };
 
 /**

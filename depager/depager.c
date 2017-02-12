@@ -87,10 +87,57 @@ void _usage(const char *appname)
     exit(EXIT_SUCCESS);
 }
 
+static const
+char phase_id[] = {
+    [0] = 'A',
+    [1] = 'B',
+    [2] = 'C',
+    [3] = 'D',
+};
+
 static
-aresult_t _on_flex_msg(struct pager_flex *flex_state, uint16_t baud, char phase, uint32_t cap_code, enum pager_flex_msg_type msg_type, const char *message_bytes, size_t message_len)
+aresult_t _on_flex_alnum_msg(
+        struct pager_flex *f,
+        uint16_t baud,
+        uint8_t phase,
+        uint8_t cycle_no,
+        uint8_t frame_no,
+        uint64_t cap_code,
+        bool fragmented,
+        bool maildrop,
+        uint8_t seq_num,
+        const char *message_bytes,
+        size_t message_len)
 {
-    /* Do nothing (for now) */
+    printf("[ALN] CAPCODE: %9zu | %4u/%c (%2u:%2u) | %c%c [%1u] | ",
+            cap_code, baud, phase_id[phase], cycle_no, frame_no, fragmented ? 'F' : '-',
+            maildrop ? 'M' : '-', seq_num);
+    for (size_t i = 0; i < message_len; i++) {
+        printf("%c", message_bytes[i]);
+    }
+    printf("\n");
+    fflush(stdout);
+    return A_OK;
+}
+
+static
+aresult_t _on_flex_num_msg(
+        struct pager_flex *f,
+        uint16_t baud,
+        uint8_t phase,
+        uint8_t cycle_no,
+        uint8_t frame_no,
+        uint64_t cap_code,
+        const char *message_bytes,
+        size_t message_len)
+{
+    printf("[NUM] CAPCODE: %9zu | %4u/%c (%2u:%2u) |        | ",
+            cap_code, baud, phase_id[phase], cycle_no, frame_no);
+    for (size_t i = 0; i < message_len; i++) {
+        printf("%c", message_bytes[i]);
+    }
+    printf("\n");
+    fflush(stdout);
     return A_OK;
 }
 
@@ -307,7 +354,7 @@ int main(int argc, char * const argv[])
 
     _set_options(argc, argv);
     TSL_BUG_IF_FAILED(polyphase_fir_new(&pfir, nr_filter_coeffs, filter_coeffs, interpolate, decimate));
-    TSL_BUG_IF_FAILED(pager_flex_new(&flex, pager_freq, _on_flex_msg));
+    TSL_BUG_IF_FAILED(pager_flex_new(&flex, pager_freq, _on_flex_alnum_msg, _on_flex_num_msg));
 
     DEP_MSG(SEV_INFO, "STARTING", "Starting pager message decoder on frequency %u Hz.", pager_freq);
 

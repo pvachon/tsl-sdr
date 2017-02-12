@@ -251,6 +251,9 @@ void _pager_flex_reset_sync(struct pager_flex *flex)
     flex->sample_range = 0;
     flex->sample_delta = 0;
 
+    flex->frame_id = 0;
+    flex->cycle_id = 0;
+
     /* Clear the sync trackers and block state trackers */
     _pager_flex_sync_reset(&flex->sync);
     _pager_flex_sync_2_reset(&flex->sync_2);
@@ -591,17 +594,25 @@ char *__pager_flex_type_code[] = {
  * special footwork around the long word.
  */
 static
-aresult_t _pager_flex_decode_alphanumeric(struct pager_flex *flex, uint64_t capcode, uint32_t long_word, uint32_t *words, size_t nr_words)
+aresult_t _pager_flex_decode_alphanumeric(struct pager_flex *flex, uint8_t phase, uint64_t capcode, uint32_t long_word, uint32_t *words, size_t nr_words)
 {
     aresult_t ret = A_OK;
 
+    struct pager_flex_coding *coding = NULL;
     size_t first_char_word = 1;
     int skip_word = 0;
     uint32_t status_word = 0;
+    uint8_t seq_num = 0;
+    bool maildrop = false,
+         fragment = false;
 
     TSL_ASSERT_ARG_DEBUG(NULL != flex);
     TSL_ASSERT_ARG_DEBUG(NULL != words);
     TSL_ASSERT_ARG_DEBUG(0 != nr_words);
+
+    coding = flex->sync.coding;
+
+    TSL_BUG_ON(NULL == coding);
 
     if (0xfffffffful != long_word) {
         first_char_word = 0;
@@ -619,27 +630,18 @@ aresult_t _pager_flex_decode_alphanumeric(struct pager_flex *flex, uint64_t capc
 
     /* Check if this message is fragmented */
     if (status_word & (1 << 10)) {
-        printf("CONT ");
-    } else {
-        printf("     ");
+        fragment = true;
     }
 
-    printf("[%2d] ", (status_word >> 13) & 0x3f);
+    seq_num = (status_word >> 11) & 0x3;
 
     /* Check if this is the first fragment. */
-    if (((status_word >> 11) & 0x3) == 3) {
+    if (seq_num == 3) {
         skip_word = 1;
-        /* Check if this is a maildrop (i.e. no need to look for further fragments) */
-        if (status_word & (1 << 20)) {
-            printf("M ");
-        } else {
-            printf("S ");
-        }
-    } else {
-        printf("  ");
+        maildrop = !!(status_word & (1 << 20));
     }
 
-
+    /* Iterate through the packed 7-bit ASCII characters */
     for (size_t i = first_char_word; i < nr_words; i++) {
         uint32_t codeword = words[i];
         if (bch_code_decode(flex->bch, &codeword)) {
@@ -655,17 +657,33 @@ aresult_t _pager_flex_decode_alphanumeric(struct pager_flex *flex, uint64_t capc
         for (size_t j = skip_word; j < 3; j++) {
             uint8_t ch = codeword & 0x7f;
             if (ch != 0x3) {
-                printf("%c", ch);
+                flex->msg_buf[flex->msg_len++] = ch;
+            } else {
+                break;
+            }
+
+            if (flex->msg_len == 255) {
+                break;
             }
             codeword >>= 7;
         }
         skip_word = 0;
+
+        if (flex->msg_len == 255) {
+            break;
+        }
     }
+
+    ret = flex->on_alnum_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id, capcode,
+            fragment, maildrop, seq_num, flex->msg_buf, flex->msg_len);
 
 done:
     return ret;
 }
 
+/**
+ * LUT for converting a binary-coded numeric page value to a string literal.
+ */
 static const
 char __pager_flex_num_lut[] = {
     [0] = '0',
@@ -690,10 +708,11 @@ char __pager_flex_num_lut[] = {
  * Decode a numeric message.
  */
 static
-aresult_t _pager_flex_decode_numeric(struct pager_flex *flex, uint64_t capcode, uint32_t long_word, uint32_t *words, size_t nr_words)
+aresult_t _pager_flex_decode_numeric(struct pager_flex *flex, uint8_t phase, uint64_t capcode, uint32_t long_word, uint32_t *words, size_t nr_words)
 {
     aresult_t ret = A_OK;
 
+    struct pager_flex_coding *coding = NULL;
     uint32_t cur_word = 0,
              next_word = 0;
     size_t nr_bits = 0,
@@ -703,6 +722,10 @@ aresult_t _pager_flex_decode_numeric(struct pager_flex *flex, uint64_t capcode, 
 
     TSL_ASSERT_ARG_DEBUG(NULL != flex);
     TSL_ASSERT_ARG_DEBUG(0 != capcode);
+
+    coding = flex->sync.coding;
+
+    TSL_BUG_ON(NULL == coding);
 
     nr_bits = nr_words * 21;
 
@@ -745,10 +768,17 @@ aresult_t _pager_flex_decode_numeric(struct pager_flex *flex, uint64_t capcode, 
         size_t rem_bits = cur_word_bits & ~0x3;
 
         for (size_t i = 0; i < rem_bits; i += 4) {
-            printf("%c", __pager_flex_num_lut[cur_word & 0xf]);
+            flex->msg_buf[flex->msg_len++] = __pager_flex_num_lut[cur_word & 0xf];
+            if (flex->msg_len == 255) {
+                break;
+            }
             cur_word >>= 4;
             cur_word_bits -= 4;
             nr_bits -= 4;
+        }
+
+        if (flex->msg_len == 255) {
+            break;
         }
 
         if (0 != cur_word_bits && 0 != nr_bits) {
@@ -790,6 +820,9 @@ aresult_t _pager_flex_decode_numeric(struct pager_flex *flex, uint64_t capcode, 
         }
     } while (0 != nr_bits);
 
+    ret = flex->on_num_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id,
+            capcode, flex->msg_buf, flex->msg_len);
+
 done:
     return ret;
 }
@@ -798,38 +831,48 @@ done:
  * Decode a tone message. Tone messages can also contain a short numeric message.
  */
 static
-aresult_t _pager_flex_decode_tone(struct pager_flex *flex, uint64_t capcode, uint32_t first_word, uint32_t second_word)
+aresult_t _pager_flex_decode_tone(struct pager_flex *flex, uint8_t phase, uint64_t capcode, uint32_t first_word, uint32_t second_word)
 {
     aresult_t ret = A_OK;
 
+    struct pager_flex_coding *coding = NULL;
     uint8_t type = 0;
 
     TSL_ASSERT_ARG_DEBUG(NULL != flex);
     TSL_ASSERT_ARG_DEBUG(0 != capcode);
 
+    coding = flex->sync.coding;
+
+    TSL_BUG_ON(NULL == coding);
+
+    first_word &= 0x1fffff;
+
     type = (first_word >> 7) & 0x3;
 
     switch (type) {
     case PAGER_FLEX_SHORT_TYPE_3_OR_8:
-        printf("NUM ");
         /* Parse the first word */
         first_word >>=9;
         for (int i = 0; i < 3; i++) {
-            printf("%c", __pager_flex_num_lut[first_word & 0xf]);
+            flex->msg_buf[flex->msg_len++] = __pager_flex_num_lut[first_word & 0xf];
             first_word >>= 4;
         }
         if (0xfffffffful != second_word) {
+            second_word &= 0x1fffff;
             for (int i = 0; i < 5; i++) {
-                printf("%c", __pager_flex_num_lut[second_word & 0xf]);
+                flex->msg_buf[flex->msg_len++] = __pager_flex_num_lut[second_word & 0xf];
                 second_word >>= 4;
             }
         }
+
+        /* Deliver the message as a normal alphanumeric message */
+        ret = flex->on_num_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id, capcode, flex->msg_buf, flex->msg_len);
         break;
     case PAGER_FLEX_SHORT_TYPE_8_SOURCES:
-        printf("SRC ");
+        PAG_MSG(SEV_INFO, "SOURCED-TONE", "[TON] CAPCODE %zu - Sources [%08x, %08x]", capcode, first_word, second_word);
         break;
     case PAGER_FLEX_SHORT_TYPE_SOURCES_AND_NUM:
-        printf("SEQUENCED ");
+        PAG_MSG(SEV_INFO, "SEQUENCED-TONE", "[TON] CAPCODE %zu - Sequenced [%08x, %08x]", capcode, first_word, second_word);
         break;
 
     case PAGER_FLEX_SHORT_TYPE_UNUSED:
@@ -847,7 +890,7 @@ done:
  * Decode a FLEX vector information word, and emit a 
  */
 static
-aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint64_t capcode, uint32_t *vec, size_t nr_vec_words, uint32_t *base)
+aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint8_t phase, uint64_t capcode, uint32_t *vec, size_t nr_vec_words, uint32_t *base)
 {
     aresult_t ret = A_OK;
     uint32_t vec_word = 0,
@@ -861,6 +904,9 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint64_t capcode, u
     TSL_ASSERT_ARG_DEBUG(NULL != vec);
     TSL_ASSERT_ARG_DEBUG(0 != capcode);
     TSL_ASSERT_ARG_DEBUG(0 != nr_vec_words);
+
+    /* Erase any previous message */
+    flex->msg_len = 0;
 
     /* Fix the vector words we'll need, first */
     for (size_t i = 0; i < nr_vec_words; i++) {
@@ -882,7 +928,6 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint64_t capcode, u
 
     /* Now figure out how to interpret this guy */
     vec_type = (vec_word >> 4) & 0x7;
-    printf("[%s] CAPCODE: %9zu: ", __pager_flex_type_code[vec_type], capcode);
 
     /* For most vector types, there's a default start word field */
     word_start = (vec_word >> 7) & 0x7f;
@@ -893,12 +938,8 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint64_t capcode, u
     }
 
     switch (vec_type) {
-    case PAGER_FLEX_MESSAGE_SECURE:
-        break;
-    case PAGER_FLEX_MESSAGE_SPECIAL_INSTRUCTION:
-        break;
     case PAGER_FLEX_MESSAGE_TONE:
-        if (FAILED(_pager_flex_decode_tone(flex, capcode, vec_word, vec_long_word))) {
+        if (FAILED(_pager_flex_decode_tone(flex, phase, capcode, vec_word, vec_long_word))) {
             ret = A_E_INVAL;
             goto done;
         }
@@ -909,13 +950,10 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint64_t capcode, u
         if (2 == nr_vec_words) {
             word_length -= 1;
         }
-        if (FAILED(_pager_flex_decode_numeric(flex, capcode, vec_long_word, base + word_start, word_length))) {
+        if (FAILED(_pager_flex_decode_numeric(flex, phase, capcode, vec_long_word, base + word_start, word_length))) {
             ret = A_E_INVAL;
             goto done;
         }
-        printf(" | L[%zu] S[%zu] %c", word_length, word_start, nr_vec_words == 2 ? 'X' : ' ');
-        break;
-    case PAGER_FLEX_MESSAGE_SPECIAL_NUMERIC:
         break;
     case PAGER_FLEX_MESSAGE_ALPHANUMERIC:
         word_length = (vec_word >> 14) & 0x7f;
@@ -923,14 +961,17 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint64_t capcode, u
             word_length -= 1;
         }
 
-        if (FAILED(_pager_flex_decode_alphanumeric(flex, capcode, vec_long_word, base + word_start, word_length))) {
+        if (FAILED(_pager_flex_decode_alphanumeric(flex, phase, capcode, vec_long_word, base + word_start, word_length))) {
             ret = A_E_INVAL;
             goto done;
         }
         break;
+    case PAGER_FLEX_MESSAGE_SPECIAL_NUMERIC:
+    case PAGER_FLEX_MESSAGE_SECURE:
+    case PAGER_FLEX_MESSAGE_SPECIAL_INSTRUCTION:
     case PAGER_FLEX_MESSAGE_HEX:
-        break;
     case PAGER_FLEX_MESSAGE_NUMBERED_NUMERIC:
+        printf("[%s] CAPCODE: %9zu\n", __pager_flex_type_code[vec_type], capcode);
         break;
     default:
         /* Shouldn't get here, but just in case... */
@@ -939,8 +980,6 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint64_t capcode, u
     }
 
 done:
-    printf("\n");
-    fflush(stdout);
     return ret;
 }
 
@@ -977,7 +1016,7 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
     biw = phs->phase_words[0] & 0x7ffffffful;
     if (bch_code_decode(flex->bch, &biw)) {
         /* Skip processing the rest of this phase */
-        DIAG("PHASE %u: Skipping (could not correct BIW %08x)", phase_id, biw);
+        PAG_MSG(SEV_INFO, "BAD-BIW", "PHASE %u: Skipping (could not correct BIW %08x)", phase_id, biw);
         goto done;
     }
 
@@ -997,6 +1036,11 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
 
     addr_start += biw_eob;
 
+    if (addr_start == biw_vsw) {
+        PAG_MSG(SEV_INFO, "NO-DATA-IN-PHASE", "%c/%2u/%2u - No Data in Block",
+            phase_id + 'A', flex->frame_id, flex->cycle_id);
+    }
+
     /* Walk the address words, and decode them */
     for (size_t i = addr_start; i < biw_vsw; i++) {
         /* Calculate the vector offset for the given address. */
@@ -1013,7 +1057,7 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
         }
 
         /* Decode per what the vector word indicates */
-        if (FAILED_UNLIKELY(_pager_flex_decode_vector(flex, capcode, &phs->phase_words[vec_offs], nr_words + 1, phs->phase_words))) {
+        if (FAILED_UNLIKELY(_pager_flex_decode_vector(flex, phase_id, capcode, &phs->phase_words[vec_offs], nr_words + 1, phs->phase_words))) {
             /* TODO: increment an error counter */
             DIAG("PHASE %u: vector at offset %d (address %zu, capcode %zu)  had an uncorrectable error",
                     phase_id, vec_offs, i, capcode);
@@ -1142,13 +1186,17 @@ void _pager_flex_block_update(struct pager_flex *flex, int16_t sample)
 static
 bool _pager_flex_handle_fiw(struct pager_flex *flex)
 {
+#ifdef _TSL_DEBUG
+    TSL_BUG_ON(NULL == flex);
+#endif /* defined(_TSL_DEBUG) */
+
     uint32_t fiw = flex->sync.fiw & 0x7ffffffful;
     uint8_t fiw_cksum = 0;
 
     /* Handle the FIW for this frame */
     if (0 != bch_code_decode(flex->bch, &fiw)) {
         /* Reset the sync state -- we couldn't correct the FIW */
-        DIAG("Unable to correct FIW, resetting sync state.");
+        PAG_MSG(SEV_INFO, "BAD-FIW", "Could not correct FIW using BCH code, skipping block.");
         return false;
     }
 
@@ -1160,14 +1208,18 @@ bool _pager_flex_handle_fiw(struct pager_flex *flex)
     /* Check the FIW checksum */
     fiw_cksum = __pager_flex_calc_word_checksum(fiw);
 
+    flex->cycle_id = (fiw >> 4) & 0xf;
+    flex->frame_id = (fiw >> 8) & 0x7f;
+
     DIAG("FIW: FIX: CKSUM=%01x CycleNo=%01x FrameNo=%02x Roam=%s Repeat=%s CalcCksum=%02x",
-            fiw & 0xf, (fiw >> 4) & 0xf, (fiw >> 8) & 0x7f, (fiw >> 15) & 1 ? "Yes" : "No",
+            fiw & 0xf, flex->cycle_id, flex->frame_id, (fiw >> 15) & 1 ? "Yes" : "No",
             (fiw >> 16) & 1 ? "Yes" : "No", (unsigned)fiw_cksum);
 
     return 0xf == fiw_cksum;
 }
 
-aresult_t pager_flex_new(struct pager_flex **pflex, uint32_t freq_hz, pager_flex_on_message_cb_t on_msg)
+aresult_t pager_flex_new(struct pager_flex **pflex, uint32_t freq_hz, pager_flex_on_alnum_msg_func_t on_aln_msg,
+        pager_flex_on_num_msg_func_t on_num_msg)
 {
     aresult_t ret = A_OK;
 
@@ -1176,7 +1228,8 @@ aresult_t pager_flex_new(struct pager_flex **pflex, uint32_t freq_hz, pager_flex
     int poly[6] = { 1, 0, 1, 0, 0, 1 };
 
     TSL_ASSERT_ARG(NULL != pflex);
-    TSL_ASSERT_ARG(NULL != on_msg);
+    TSL_ASSERT_ARG(NULL != on_aln_msg);
+    TSL_ASSERT_ARG(NULL != on_num_msg);
 
     if (FAILED(ret = TZAALLOC(flex, SYS_CACHE_LINE_LENGTH))) {
         goto done;
@@ -1185,7 +1238,8 @@ aresult_t pager_flex_new(struct pager_flex **pflex, uint32_t freq_hz, pager_flex
     TSL_BUG_IF_FAILED(bch_code_new(&flex->bch, poly, 5, 31, 21, 2));
 
     flex->freq_hz = freq_hz;
-    flex->on_msg = on_msg;
+    flex->on_alnum_msg = on_aln_msg;
+    flex->on_num_msg = on_num_msg;
 
     _pager_flex_reset_sync(flex);
 
