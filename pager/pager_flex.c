@@ -971,7 +971,7 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint8_t phase, uint
     case PAGER_FLEX_MESSAGE_SPECIAL_INSTRUCTION:
     case PAGER_FLEX_MESSAGE_HEX:
     case PAGER_FLEX_MESSAGE_NUMBERED_NUMERIC:
-        printf("[%s] CAPCODE: %9zu\n", __pager_flex_type_code[vec_type], capcode);
+        PAG_MSG(SEV_INFO, "UNSUPP-MSG", "[%s] CAPCODE: %9zu", __pager_flex_type_code[vec_type], capcode);
         break;
     default:
         /* Shouldn't get here, but just in case... */

@@ -223,12 +223,20 @@ static
 void _set_options(int argc, char * const argv[])
 {
     int arg = -1;
-    const char *filter_file = NULL;
+    const char *filter_file = NULL,
+               *out_file_name = NULL;
     struct config *cfg CAL_CLEANUP(config_delete) = NULL;
     double *filter_coeffs_f = NULL;
+    bool create_out = false;
 
-    while ((arg = getopt(argc, argv, "I:D:S:F:f:d:p:bh")) != -1) {
+    while ((arg = getopt(argc, argv, "co:I:D:S:F:f:d:p:bh")) != -1) {
         switch (arg) {
+        case 'o':
+            out_file_name = optarg;
+            break;
+        case 'c':
+            create_out = true;
+            break;
         case 'f':
             pager_freq = strtoll(optarg, NULL, 0);
             break;
@@ -292,6 +300,24 @@ void _set_options(int argc, char * const argv[])
     if (NULL == filter_file) {
         DEP_MSG(SEV_FATAL, "BAD-FILTER-FILE", "Need to specify a filter JSON file.");
         exit(EXIT_FAILURE);
+    }
+
+    if (NULL == out_file_name) {
+        DEP_MSG(SEV_INFO, "WRITE-TO-STDOUT", "Output decoded data is going to stdout.");
+        out_file = stdout;
+    } else {
+        if (create_out) {
+            DEP_MSG(SEV_INFO, "CREATING-OUTPUT", "Creating output file '%s', will overwrite if it exists",
+                    out_file_name);
+        } else {
+            DEP_MSG(SEV_INFO, "OPENING-OUTPUT", "Opening output file '%s', will append to end if it exists",
+                    out_file_name);
+        }
+        if (NULL == (out_file = fopen(out_file_name, create_out ? "w+" : "a"))) {
+            DEP_MSG(SEV_INFO, "BAD-OUTPUT-FILE", "Failed to open output file '%s', aborting.",
+                    out_file_name);
+            exit(EXIT_FAILURE);
+        }
     }
 
     DEP_MSG(SEV_INFO, "CONFIG", "Resampling: %u/%u from %u to %f", interpolate, decimate, input_sample_rate,
@@ -444,6 +470,10 @@ int main(int argc, char * const argv[])
     ret = EXIT_SUCCESS;
 
 done:
+    if (NULL != out_file && stdout != out_file) {
+        fclose(out_file);
+    }
+
     pager_flex_delete(&flex);
     polyphase_fir_delete(&pfir);
     return ret;
