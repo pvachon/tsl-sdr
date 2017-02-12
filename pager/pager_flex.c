@@ -543,7 +543,9 @@ aresult_t _pager_flex_decode_address(struct pager_flex *flex, uint32_t *addr, ui
     addr_first = addr[0] &= 0x1fffff;
 
     /* Check if this is a long or short address, and decode the CAPCODE */
-    if (addr_first > 0x8000 && addr_first <= 0x1e0000) {
+    if ( (addr_first > 0x8000 && addr_first <= 0x1e0000) ||
+            (addr_first > 0x1f0000 && addr_first < 0x1f7fff) )
+    {
         /* Short address, decode as such, set the number of output words */
         *pcapcode = addr_first - 32768;
         *pnr_words = 0;
@@ -684,6 +686,114 @@ char __pager_flex_num_lut[] = {
 };
 
 /**
+ * Decode a numeric message.
+ */
+static
+aresult_t _pager_flex_decode_numeric(struct pager_flex *flex, uint64_t capcode, uint32_t long_word, uint32_t *words, size_t nr_words)
+{
+    aresult_t ret = A_OK;
+
+    uint32_t cur_word = 0,
+             next_word = 0;
+    size_t nr_bits = 0,
+           cur_word_bits = 19,
+           next_word_offs = 0,
+           next_word_bits = 21;
+
+    TSL_ASSERT_ARG_DEBUG(NULL != flex);
+    TSL_ASSERT_ARG_DEBUG(0 != capcode);
+
+    nr_bits = nr_words * 21;
+
+    if (long_word != 0xfffffffful) {
+        /* Process the initial message word first */
+        cur_word = (long_word & 0x1fffff) >> 2;
+        nr_bits += 19;
+        cur_word_bits = 19;
+        next_word_offs = 0;
+    } else {
+        /* Check the BCH code for cur_word */
+        cur_word = words[0];
+        if (bch_code_decode(flex->bch, &cur_word)) {
+            DIAG("Failed to BCH(31, 21) for first word of numeric page");
+            ret = A_E_INVAL;
+            goto done;
+        }
+        cur_word &= 0x1fffff;
+        cur_word >>= 2;
+        cur_word_bits = 19;
+        nr_bits -= 2;
+        next_word_offs = 1;
+    }
+
+    if (next_word_offs < nr_words) {
+        next_word = words[next_word_offs];
+        if (bch_code_decode(flex->bch, &next_word)) {
+            DIAG("Failed to BCH(31, 21) for the first following word of numeric page.");
+            ret = A_E_INVAL;
+            goto done;
+        }
+        next_word_bits = 21;
+        next_word &= 0x1fffff;
+    }
+
+    /* Round down modulo 4 for the number of bits to process */
+    nr_bits = nr_bits & ~0x3;
+
+    do {
+        size_t rem_bits = cur_word_bits & ~0x3;
+
+        for (size_t i = 0; i < rem_bits; i += 4) {
+            printf("%c", __pager_flex_num_lut[cur_word & 0xf]);
+            cur_word >>= 4;
+            cur_word_bits -= 4;
+            nr_bits -= 4;
+        }
+
+        if (0 != cur_word_bits && 0 != nr_bits) {
+            /* Grab the next word, update the current word with the needed number of bits */
+            switch (cur_word_bits) {
+            case 1:
+                cur_word |= (next_word & 0x7) << 1;
+                next_word >>= 3;
+                next_word_bits -= 3;
+                break;
+            case 2:
+                cur_word |= (next_word & 0x3) << 2;
+                next_word >>= 2;
+                next_word_bits -= 2;
+                break;
+            case 3:
+                cur_word |= (next_word & 0x1) << 3;
+                next_word >>= 1;
+                next_word_bits -= 1;
+                break;
+            }
+
+            /* Iterate through one more time on the current word. */
+            cur_word_bits = 4;
+        } else if (0 == cur_word_bits && 0 != nr_bits) {
+            cur_word = next_word;
+            cur_word_bits = next_word_bits;
+            next_word_bits = 21;
+            next_word_offs++;
+            if (next_word_offs < nr_words) {
+                next_word = words[next_word_offs];
+                if (bch_code_decode(flex->bch, &next_word)) {
+                    DIAG("Failed ot BCH(31, 31) for the word at %zu", next_word_offs);
+                    ret = A_E_INVAL;
+                    goto done;
+                }
+                next_word &= 0x1fffff;
+            }
+        }
+    } while (0 != nr_bits);
+
+done:
+    return ret;
+}
+
+/**
  * Decode a tone message. Tone messages can also contain a short numeric message.
  */
 static
@@ -751,7 +861,7 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint64_t capcode, u
     TSL_ASSERT_ARG_DEBUG(0 != capcode);
     TSL_ASSERT_ARG_DEBUG(0 != nr_vec_words);
 
-    /* Fix the vector words, first */
+    /* Fix the vector words we'll need, first */
     for (size_t i = 0; i < nr_vec_words; i++) {
         if (bch_code_decode(flex->bch, &vec[i])) {
             DIAG("BCH(31,21) failed to fix vector word %zu", i);
@@ -773,14 +883,12 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint64_t capcode, u
     vec_type = (vec_word >> 4) & 0x7;
     printf("[%s] CAPCODE: %9zu: ", __pager_flex_type_code[vec_type], capcode);
 
-    /* For most vector types, there's a default start word/word count field */
+    /* For most vector types, there's a default start word field */
     word_start = (vec_word >> 7) & 0x7f;
-    word_length = (vec_word >> 14) & 0x7f;
 
-    /* Adjust if the first word is the second vector word */
+    /* Adjust if the first message word is the second vector word */
     if (2 == nr_vec_words) {
         vec_long_word = vec[1];
-        word_length -= 1;
     }
 
     switch (vec_type) {
@@ -795,11 +903,25 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint64_t capcode, u
         }
         break;
     case PAGER_FLEX_MESSAGE_STANDARD_NUMERIC:
-
+        /* Only 3 bits of word length for numeric pages */
+        word_length = ((vec_word >> 14) & 0x7) + 1;
+        if (2 == nr_vec_words) {
+            word_length -= 1;
+        }
+        if (FAILED(_pager_flex_decode_numeric(flex, capcode, vec_long_word, base + word_start, word_length))) {
+            ret = A_E_INVAL;
+            goto done;
+        }
+        printf(" | L[%zu] S[%zu] %c", word_length, word_start, nr_vec_words == 2 ? 'X' : ' ');
         break;
     case PAGER_FLEX_MESSAGE_SPECIAL_NUMERIC:
         break;
     case PAGER_FLEX_MESSAGE_ALPHANUMERIC:
+        word_length = (vec_word >> 14) & 0x7f;
+        if (2 == nr_vec_words) {
+            word_length -= 1;
+        }
+
         if (FAILED(_pager_flex_decode_alphanumeric(flex, capcode, vec_long_word, base + word_start, word_length))) {
             ret = A_E_INVAL;
             goto done;
