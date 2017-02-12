@@ -523,8 +523,15 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
 {
     struct pager_flex_block *blk = NULL;
     struct pager_flex_phase *phs = NULL;
-    uint32_t biw = 0,
-             raw_biw = 0;
+    uint32_t biw = 0;
+    uint8_t biw_cksum = 0,
+            biw_prio = 0,
+            biw_eob = 0,
+            biw_vsw = 0,
+            biw_carry = 0,
+            biw_m = 0;
+    size_t addr_start = 1;
+
 #ifdef _TSL_DEBUG
     TSL_BUG_ON(NULL == flex);
     TSL_BUG_ON(phase_id >= PAGER_FLEX_PHASE_MAX);
@@ -541,13 +548,48 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
     DIAG("PHASE %u: %u words", phase_id, phs->cur_word);
 
     /* Grab the BIW, and correct it */
-    biw = raw_biw = phs->phase_words[0] & 0x7ffffffful;
+    biw = phs->phase_words[0] & 0x7ffffffful;
     if (bch_code_decode(flex->bch, &biw)) {
         /* Skip processing the rest of this phase */
-        DIAG("PHASE %u: Skipping (could not correct BIW %08x)", phase_id, raw_biw);
+        DIAG("PHASE %u: Skipping (could not correct BIW %08x)", phase_id, biw);
         goto done;
     }
-    DIAG("PHASE %u: BIW: %08x -> %08x", phase_id, raw_biw, biw);
+
+    uint32_t biw_masked = biw & 0x1fffff;
+    for (size_t nibble = 0; nibble < 6; nibble++) {
+        biw_cksum += biw_masked & 0xf;
+        biw_masked >>= 4;
+    }
+    biw_cksum &= 0xf;
+
+    biw_prio = (biw >> 4) & 0xf;
+    biw_eob = (biw >> 8) & 0x3;
+    biw_vsw = (biw >> 10) & 0x3f;
+    biw_carry = (biw >> 16) & 0x3;
+    biw_m = (biw >> 18) & 0x7;
+    DIAG("PHASE %u: BIW: %08x (CkSum:%01x Prio:%01x EoB:%01x VSW:%02x Carry:%01x Collapse:%01x)",
+            phase_id, biw, biw_cksum, biw_prio, biw_eob, biw_vsw, biw_carry, biw_m);
+
+    if (0 != biw_eob) {
+        /* TODO: walk any additional Block Information Words */
+    }
+
+    addr_start += biw_eob;
+
+    /* Walk the address words, and decode them */
+    for (size_t i = addr_start; i < biw_vsw; i++) {
+        if (bch_code_decode(flex->bch, &phs->phase_words[i])) {
+            DIAG("PHASE %u: Failed to fix address word at offset %zu, we have to abort", phase_id, i);
+            goto done;
+        }
+        phs->phase_words[i] &= 0x1fffff;
+
+        /* Check if this is a long or short address, and decode the CAPCODE */
+
+        /* Find the associated vector word */
+
+        /* Decode per what the vector word indicates */
+    }
 
 done:
     return;
