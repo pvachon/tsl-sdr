@@ -348,6 +348,24 @@ struct pager_flex_coding {
  */
 
 /**
+ * Various odds and ends of FLEX frame sync constants. These are used for the SYNC 1 phase
+ *
+ * Any FLEX frame SYNC 1 phase is structured as follows:
+ * - 32-bits of 0xaaaaaaaa
+ * - 16-bit A sync code leader (taken from _pager_codings)
+ * - 16-bit A sync fixed magic (0x5939)
+ * - 16-bit B sync fixed magic (0x5555)
+ * - 16-bit A sync code leader, inverted
+ * - 16-bit A sync fixed magic, inverted
+ *
+ * Immediately following the sync sequence is the Frame Info Word (FIW). This word is
+ * protected using a BCH(31,7) code (same used for data words).
+ *
+ * SYNC1 is always transmitted as 1600bps, 2FSK.
+ * @{
+ */
+
+/**
  * The BS1 pattern
  */
 #define PAGER_FLEX_SYNC_BS1                 0xaaaaaaaaul
@@ -376,4 +394,43 @@ struct pager_flex_coding {
  */
 
 #define PAGER_FLEX_SYNC_2_MAGIC_C           0xed84
+
+/**
+ * End of Sync Constants
+ * @}
+ */
+
+/**
+ * Vector Type Codes
+ *
+ * These type codes define how the message block should be interpreted.
+ * @{
+ */
+
+#define PAGER_FLEX_MESSAGE_SECURE                   0x0
+#define PAGER_FLEX_MESSAGE_SPECIAL_INSTRUCTION      0x1
+#define PAGER_FLEX_MESSAGE_TONE                     0x2
+#define PAGER_FLEX_MESSAGE_STANDARD_NUMERIC         0x3
+#define PAGER_FLEX_MESSAGE_SPECIAL_NUMERIC          0x4
+#define PAGER_FLEX_MESSAGE_ALPHANUMERIC             0x5
+#define PAGER_FLEX_MESSAGE_HEX                      0x6
+#define PAGER_FLEX_MESSAGE_NUMBERED_NUMERIC         0x7
+
+/**
+ * End of Vector Type Codes
+ * @}
+ */
+
+/**
+ * Short Message/Tone Only Codes
+ * @{
+ */
+#define PAGER_FLEX_SHORT_TYPE_3_OR_8                0x0
+#define PAGER_FLEX_SHORT_TYPE_8_SOURCES             0x1
+#define PAGER_FLEX_SHORT_TYPE_SOURCES_AND_NUM       0x2
+#define PAGER_FLEX_SHORT_TYPE_UNUSED                0x3
+/**
+ * End of Short Message/Tone Only Codes
+ * @}
+ */
 

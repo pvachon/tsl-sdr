@@ -262,7 +262,7 @@ aresult_t process_samples(void)
                 goto done;
             }
 
-            DIAG("Read %d bytes from input FIFO", op_ret);
+            //DIAG("Read %d bytes from input FIFO", op_ret);
 
             TSL_BUG_ON((1 & op_ret) != 0);
 
