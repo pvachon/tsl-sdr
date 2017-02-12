@@ -179,6 +179,13 @@ void _pager_flex_block_reset(struct pager_flex_block *block)
     block->nr_symbols = 0;
     block->phase_ff = false;
 
+    for (size_t i = 0; i < PAGER_FLEX_PHASE_MAX; i++) {
+        struct pager_flex_phase *ph = &block->phase[i];
+        ph->cur_bit = 0;
+        ph->cur_word = 0;
+        ph->base_word = 0;
+    }
+
 #ifdef _TSL_DEBUG
     memset(&block->phase, 0, sizeof(block->phase));
 #endif
@@ -526,10 +533,12 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
     blk = &flex->block;
     phs = &blk->phase[phase_id];
 
-    TSL_BUG_ON(0 == phs->cur_word);
+    TSL_BUG_ON(0 == phs->base_word);
     if (0 != phs->cur_bit) {
         DIAG("WARNING: current bit ID is %u", phs->cur_bit);
     }
+
+    DIAG("PHASE %u: %u words", phase_id, phs->cur_word);
 
     /* Grab the BIW, and correct it */
     biw = raw_biw = phs->phase_words[0] & 0x7ffffffful;
@@ -550,13 +559,21 @@ void _pager_flex_phase_append_bit(struct pager_flex_phase *phase, bool bit)
 #ifdef _TSL_DEBUG
     TSL_BUG_ON(NULL == phase);
 #endif
-    phase->phase_words[phase->cur_word] >>= 1;
-    phase->phase_words[phase->cur_word] |= ((uint32_t)(!!bit)) << 31;
+    phase->phase_words[phase->base_word + phase->cur_word] >>= 1;
+    phase->phase_words[phase->base_word + phase->cur_word] |= ((uint32_t)(!!bit)) << 31;
+
+    phase->cur_word = (phase->cur_word + 1) % 8;
 
     /* Update the state of the phase tracker */
-    if (32 == ++phase->cur_bit) {
+    if (0 == phase->cur_word) {
+        phase->cur_bit++;
+    }
+
+    /* Start decoding the next block */
+    if (32 == phase->cur_bit) {
+        phase->base_word += 8;
         phase->cur_bit = 0;
-        phase->cur_word++;
+        phase->cur_word = 0;
     }
 }
 
@@ -576,9 +593,6 @@ void _pager_flex_block_update(struct pager_flex *flex, int16_t sample)
 #endif
 
     symbol = coding->slice(flex, sample);
-#ifdef _DUMP_SAMPLE_CODES
-    fprintf(stderr, "%d (sample = %d)\n", symbol, sample - flex->sample_delta);
-#endif
 
     /* Put the symbol bit(s) in the right phase */
     switch (coding->nr_phases) {
@@ -611,6 +625,9 @@ void _pager_flex_block_update(struct pager_flex *flex, int16_t sample)
     case 4:
         TSL_BUG_ON(2 != coding->sym_bits);
         if (false == blk->phase_ff) {
+#ifdef _DUMP_SAMPLE_CODES
+        fprintf(stderr, "%d %d %d (sample = %d)\n", !!(symbol & 2), !!(symbol & 1), symbol, sample - flex->sample_delta);
+#endif
             _pager_flex_phase_append_bit(&blk->phase[PAGER_FLEX_PHASE_A], !!(symbol & 2));
             _pager_flex_phase_append_bit(&blk->phase[PAGER_FLEX_PHASE_B], !!(symbol & 1));
         } else {
@@ -626,7 +643,7 @@ void _pager_flex_block_update(struct pager_flex *flex, int16_t sample)
     blk->nr_symbols++;
 
     if (blk->nr_symbols == coding->symbols_per_block) {
-        /* Process the block data */
+        /* Process the block data, one phase at a time */
         switch (coding->nr_phases) {
         case 1:
             _pager_flex_phase_process(flex, PAGER_FLEX_PHASE_A);
@@ -643,7 +660,7 @@ void _pager_flex_block_update(struct pager_flex *flex, int16_t sample)
             break;
         }
 
-        /* Reset to the idle/sync 1 search state */
+        /* Reset to the idle/Sync 1 search state */
         _pager_flex_reset_sync(flex);
     }
 }

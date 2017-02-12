@@ -175,12 +175,13 @@ struct pager_flex_sync_2 {
 #define PAGER_FLEX_PHASE_WORDS          88
 
 /**
- * A phase of FLEX data. Contains 8 words
+ * A phase of FLEX data. Each phase contains 88 words, across 11 blocks.
  */
 struct pager_flex_phase {
     uint32_t phase_words[PAGER_FLEX_PHASE_WORDS];
     uint8_t cur_bit;
     uint8_t cur_word;
+    uint8_t base_word;
 };
 
 #define PAGER_FLEX_PHASE_A              0
