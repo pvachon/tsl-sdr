@@ -39,6 +39,8 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
+#include <ctype.h>
+#include <time.h>
 
 #define DEP_MSG(sev, sys, msg, ...) MESSAGE("DEPAGER", sev, sys, msg, ##__VA_ARGS__)
 
@@ -96,6 +98,46 @@ char phase_id[] = {
 };
 
 static
+FILE *out_file = NULL;
+
+static inline
+void _depager_put_alnum_char(FILE *fp, char ch)
+{
+    switch (ch) {
+    case '\n':
+        fprintf(fp, "\\n");
+        break;
+    case '\r':
+        fprintf(fp, "\\n");
+        break;
+    case '\"':
+        fprintf(fp, "\\\"");
+        break;
+    case '\\':
+        fprintf(fp, "\\\\");
+        break;
+    case '/':
+        fprintf(fp, "\\/");
+        break;
+    case '\b':
+        fprintf(fp, "<BKSP>");
+        break;
+    case '\f':
+        fprintf(fp, "<FF>");
+        break;
+    case '\t':
+        fprintf(fp, "\\t");
+        break;
+    default:
+        if (isprint(ch)) {
+            fprintf(fp, "%c", ch);
+        } else {
+            fprintf(fp, "\\u%04x", (unsigned)ch);
+        }
+    }
+}
+
+static
 aresult_t _on_flex_alnum_msg(
         struct pager_flex *f,
         uint16_t baud,
@@ -109,6 +151,24 @@ aresult_t _on_flex_alnum_msg(
         const char *message_bytes,
         size_t message_len)
 {
+    /* TODO: this sucks, should move it closer to the capture clock */
+	time_t now = time(NULL);
+	struct tm *gmt = gmtime(&now);
+
+    fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"alphanumeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%9lu,\"fragment\":%s,"
+            "\"maildrop\":%s,\"fragSeq\":%u,\"message\":\"",
+            gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+            baud, 0, frame_no, cycle_no, phase_id[phase], cap_code,
+            fragmented ? "true" : "false", maildrop ? "true" : "false", seq_num);
+
+    for (size_t i = 0; i < message_len; i++) {
+        _depager_put_alnum_char(out_file, message_bytes[i]);
+    }
+
+    fprintf(out_file, "\"}\n");
+    fflush(out_file);
+#if 0
     printf("[ALN] CAPCODE: %9zu | %4u/%c (%2u:%2u) | %c%c [%1u] | ",
             cap_code, baud, phase_id[phase], cycle_no, frame_no, fragmented ? 'F' : '-',
             maildrop ? 'M' : '-', seq_num);
@@ -117,6 +177,7 @@ aresult_t _on_flex_alnum_msg(
     }
     printf("\n");
     fflush(stdout);
+#endif
     return A_OK;
 }
 
@@ -131,6 +192,22 @@ aresult_t _on_flex_num_msg(
         const char *message_bytes,
         size_t message_len)
 {
+    /* TODO: this sucks, should move it closer to the capture clock */
+	time_t now = time(NULL);
+	struct tm *gmt = gmtime(&now);
+
+    fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"alphanumeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%9lu,\"message\":\"",
+            gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+            baud, 0, frame_no, cycle_no, phase_id[phase], cap_code);
+
+    for (size_t i = 0; i < message_len; i++) {
+        _depager_put_alnum_char(out_file, message_bytes[i]);
+    }
+
+    fprintf(out_file, "\"}\n");
+    fflush(out_file);
+#if 0
     printf("[NUM] CAPCODE: %9zu | %4u/%c (%2u:%2u) |        | ",
             cap_code, baud, phase_id[phase], cycle_no, frame_no);
     for (size_t i = 0; i < message_len; i++) {
@@ -138,6 +215,7 @@ aresult_t _on_flex_num_msg(
     }
     printf("\n");
     fflush(stdout);
+#endif
     return A_OK;
 }
 
