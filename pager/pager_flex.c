@@ -404,6 +404,7 @@ void _pager_flex_sync_update(struct pager_flex *flex, int16_t sample)
                     DIAG("INV_A -> FIW INV_A = %08x INV_A_BAR= %08x", sync->inv_a, ~sync->inv_a);
                     sync->state = PAGER_FLEX_SYNC_STATE_FIW;
                 } else {
+                    PAG_MSG(SEV_WARNING, "UNKNOWN-BAUD", "Unknown baud identifier code: %04x/%04x", sync->a, sync->inv_a);
                     DIAG("INV_A -> SEARCH_BS1");
                     _pager_flex_sync_reset(sync);
                 }
@@ -1148,7 +1149,7 @@ bool _pager_flex_handle_fiw(struct pager_flex *flex)
     if (0 != bch_code_decode(flex->bch, &fiw)) {
         /* Reset the sync state -- we couldn't correct the FIW */
         DIAG("Unable to correct FIW, resetting sync state.");
-        _pager_flex_reset_sync(flex);
+        return false;
     }
 
     DIAG("FIW: Corrected %u errors", __builtin_popcount(fiw ^ (flex->sync.fiw & 0x7ffffffful)));
