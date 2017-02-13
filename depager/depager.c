@@ -370,7 +370,7 @@ aresult_t _alloc_sample_buf(struct sample_buf **pbuf)
         goto done;
     }
 
-    buf->refcount = 0;
+    buf->refcount = 1;
     buf->sample_type = COMPLEX_INT_16;
     buf->sample_buf_bytes = NR_SAMPLES * sizeof(int16_t);
     buf->nr_samples = 0;
@@ -444,6 +444,7 @@ aresult_t process_samples(void)
             }
         }
 
+        /* Release the sample buffer */
     } while (app_running());
 
 done:

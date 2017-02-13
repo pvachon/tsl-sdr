@@ -37,7 +37,6 @@ aresult_t sample_buf_decref(struct sample_buf *buf)
     if (1 == atomic_fetch_sub(&buf->refcount, 1)) {
         TSL_BUG_ON(NULL == buf->release);
         TSL_BUG_IF_FAILED(buf->release(buf));
-        DIAG("FREED: %p", buf);
     }
 
     return ret;
