@@ -69,7 +69,7 @@ struct pager_flex_coding _pager_codings[] = {
         .nr_phases = 2,
     },
     {
-        .seq_a = 0xb068,
+        .seq_a = 0x4f97,
         .baud = 3200,
         .fsk_levels = 4,
         .sample_skip = 9,
