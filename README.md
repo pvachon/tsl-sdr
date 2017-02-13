@@ -22,7 +22,8 @@ would be just a waste of time!).
 
 # Tools
 
-There are a number of applications in this repo.
+There are a number of applications in this repo. They all serve different
+purposes.
 
 ## MultiFM
 
@@ -37,6 +38,43 @@ for FLEX pager channels, and sample configuration for multifm. The configuration
 should be largely self-explanatory.
 
 Invoke MultiFM with `multifm [configuration file 1] ... [configuration file n]`.
+
+## Depager
+
+Depager is designed to take a PCM stream of FLEX data, and decode the pages
+contained therein. Depager will yield the pages as JSON objects, which then can
+be further postprocessed as you see fit.
+
+Depager has a built-in rational resampler. As long as you can efficiently get your
+input data to 16kHz samples through a rational resampling, you're good to go.
+
+You can think of the rational resampler as allowing a user to resample input
+samples of frequency `F_in` per the following equation:
+
+```
+F_out = F_in * Interpolating factor
+        ---------------------------
+             Decimation Factor
+```
+
+Depager takes several arguments:
+ * `-I [int]` The interpolating (or multiplicative) factor for the resampler
+ * `-D [int]` The decimating (or dividing) factor for the resampler.
+ * `-F [JSON]` The filter kernel - this should be designed to ensure no aliasing.
+ * `-d [binary File]` Output debug file. All samples after initial processing are written here. Optional.
+ * `-S [rate]` Input sample rate, from the source file, in hertz
+ * `-f [frequency]` The frequency, in Hertz, of the pager channel. Required, but can be bogus.
+ * `-b` Enable the DC blocker filter. You probably don't want to do this.
+ * `-o [file]` Specify the output file. If this is not provided, it's assumed you want to write to stdout.
+ * `-c` If specified, create the output file. Optional, ignored if `-o` isn't specified.
+
+The final argument is the sample source. This is any UNIX file (so can be a fifo, for example).
+
+Included in `etc/` is a file called `resampler_filter.json`. If you're messing with
+FLEX, this file is appropriate for your purposes.
+
+Think carefully -- you might be able to pipe, say, the output of MultiFM to the
+input of multiple depagers. Just saying.
 
 ## Resampler
 

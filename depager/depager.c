@@ -83,9 +83,10 @@ double dc_block_pole = 0.9999;
 static
 void _usage(const char *appname)
 {
-    DEP_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -d [sample_debug_file] -S [sample rate] -f [pager chan freq] [-b] [in_fifo]",
+    DEP_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -d [sample_debug_file] -S [input sample rate] -f [pager chan freq] [-c] [-o output JSON file] [-b] [in_fifo]",
             appname);
     DEP_MSG(SEV_INFO, "USAGE", "        -b      Enable DC blocking filter");
+    DEP_MSG(SEV_INFO, "USAGE", "        -c      Create JSON output file");
     exit(EXIT_SUCCESS);
 }
 
