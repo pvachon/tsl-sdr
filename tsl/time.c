@@ -240,7 +240,7 @@ aresult_t tsl_time_init(void)
 {
     aresult_t ret = A_OK;
 
-#ifdef _x86_64__
+#ifdef __x86_64__
     _tsl_proc_clock_offset = __tsl_get_cpu_timer();
 
     if (tsl_calc_clockfreq(&_tsl_clock_freq)) {
