@@ -392,21 +392,28 @@ aresult_t process_samples(void)
     int ret = A_OK;
 
     struct dc_blocker blck;
+    struct sample_buf *read_buf = NULL;
 
     TSL_BUG_IF_FAILED(dc_blocker_init(&blck, dc_block_pole));
 
     do {
         int op_ret = 0;
-        struct sample_buf *read_buf = NULL;
         size_t new_samples = 0;
         bool full = false;
 
         TSL_BUG_IF_FAILED(polyphase_fir_full(pfir, &full));
 
         if (false == full) {
-            TSL_BUG_IF_FAILED(_alloc_sample_buf(&read_buf));
+            size_t nr_sample_bytes = 0;
 
-            if (0 >= (op_ret = read(in_fifo, read_buf->data_buf, read_buf->sample_buf_bytes))) {
+            if (NULL == read_buf) {
+                /* Allocate a new buffer */
+                TSL_BUG_IF_FAILED(_alloc_sample_buf(&read_buf));
+            }
+
+            nr_sample_bytes = read_buf->nr_samples * sizeof(int16_t);
+
+            if (0 >= (op_ret = read(in_fifo, (uint8_t *)read_buf->data_buf + nr_sample_bytes, read_buf->sample_buf_bytes - nr_sample_bytes))) {
                 int errnum = errno;
                 ret = A_E_INVAL;
                 DEP_MSG(SEV_FATAL, "READ-FIFO-FAIL", "Failed to read from input fifo: %s (%d)",
@@ -414,18 +421,23 @@ aresult_t process_samples(void)
                 goto done;
             }
 
-            //DIAG("Read %d bytes from input FIFO", op_ret);
-
             TSL_BUG_ON((1 & op_ret) != 0);
 
-            read_buf->nr_samples = op_ret/sizeof(int16_t);
+            read_buf->nr_samples += op_ret/sizeof(int16_t);
 
-            TSL_BUG_IF_FAILED(polyphase_fir_push_sample_buf(pfir, read_buf));
+            if (read_buf->nr_samples == NR_SAMPLES) {
+                TSL_BUG_IF_FAILED(polyphase_fir_push_sample_buf(pfir, read_buf));
+                read_buf = NULL;
+            }
         }
 
         /* Filter the samples, decimating as appropriate */
         TSL_BUG_IF_FAILED(polyphase_fir_process(pfir, output_buf, NR_SAMPLES, &new_samples));
-        TSL_BUG_ON(0 == new_samples);
+
+        if (0 == new_samples) {
+            /* Skip further sample processing */
+            continue;
+        }
 
         /* Apply DC blocker, if asked */
         if (true == dc_blocker) {
