@@ -1036,10 +1036,12 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
 
     addr_start += biw_eob;
 
+#ifdef _TSL_DEBUG
     if (addr_start == biw_vsw) {
         PAG_MSG(SEV_INFO, "NO-DATA-IN-PHASE", "%c/%2u/%2u - No Data in Block",
             phase_id + 'A', flex->frame_id, flex->cycle_id);
     }
+#endif
 
     /* Walk the address words, and decode them */
     for (size_t i = addr_start; i < biw_vsw; i++) {
