@@ -57,6 +57,9 @@ def configure(conf):
 	_loadTools(conf)
 
 	conf.check(lib='rtlsdr', uselib='RTLSDR', define_name='HAVE_RTLSDR')
+	conf.check(lib='ck', uselib='CK', define_name='HAVE_CONCURRENCYKIT', msg='Checking for ConcurrencyKit')
+	conf.check(lib='jansson', uselib='JANSSON', define_name='HAVE_JANSSON', msg='Checking for Jansson (JSON library)')
+
 
 	#Setup build flags
 	conf.env.CFLAGS += [
