@@ -886,6 +886,18 @@ done:
     return ret;
 }
 
+#define PAGER_FLEX_SIV_TEMP_ADDRESS_ACTIVATION              0x0
+#define PAGER_FLEX_SIV_SYSTEM_EVENT                         0x1
+#define PAGER_FLEX_SIV_RESERVED_TEST                        0x3
+
+static
+aresult_t _pager_flex_decode_short_instruction_vec(struct pager_flex *flex, uint8_t phase, uint64_t capcode, uint32_t vec_word)
+{
+    aresult_t ret = A_OK;
+
+    return ret;
+}
+
 /**
  * Decode a FLEX vector information word, and emit a 
  */

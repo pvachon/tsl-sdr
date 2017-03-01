@@ -37,7 +37,7 @@
 %define CRS_OFFS_R9                 104
 
     BITS    64
-    CPU     Haswell
+    ;CPU     Haswell
 
     ; void coro_plat_ctx_swap(struct coro_reg_state *tgt, struct coro_reg_state *cur)
     ;   This function is virtually invisible to the caller - it does not touch the
