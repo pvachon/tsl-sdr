@@ -23,7 +23,7 @@ versionCommand = 'git describe --abbrev=16 --dirty --always --tags'.split(' ')
 cpuArchCommand = '/bin/uname -m'.split(' ')
 
 # FIXME: get rid of this crap
-cpuArch = subprocess.check_output(cpuArchCommand).strip()
+cpuArch = subprocess.check_output(cpuArchCommand).strip().decode('utf-8')
 
 def _checkSupportedArch(cpuArchId):
 	if cpuArchId != 'x86_64' and cpuArchId != 'armv7l' and cpuArchId != 'aarch64':
@@ -223,7 +223,7 @@ def build(bld):
 	#Check the version immediately before the build happens
 	import subprocess
 	try:
-		version = subprocess.check_output(versionCommand).strip()
+		version = subprocess.check_output(versionCommand).strip().decode('utf-8')
 		Logs.info('Building version %s' % version)
 	except subprocess.CalledProcessError:
 		version = 'NotInGit'
