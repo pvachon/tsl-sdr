@@ -622,7 +622,6 @@ aresult_t _pager_flex_decode_alphanumeric(struct pager_flex *flex, uint8_t phase
         status_word = words[0];
 
         if (bch_code_decode(flex->bch, &status_word)) {
-            DIAG("Failed to decode alphanumeric page status word, aborting.");
             ret = A_E_INVAL;
             goto done;
         }
@@ -645,7 +644,6 @@ aresult_t _pager_flex_decode_alphanumeric(struct pager_flex *flex, uint8_t phase
     for (size_t i = first_char_word; i < nr_words; i++) {
         uint32_t codeword = words[i];
         if (bch_code_decode(flex->bch, &codeword)) {
-            DIAG("Failed to fix ALN page data word %zu, aborting.", i);
             ret = A_E_INVAL;
             goto done;
         }
@@ -739,7 +737,6 @@ aresult_t _pager_flex_decode_numeric(struct pager_flex *flex, uint8_t phase, uin
         /* Check the BCH code for cur_word */
         cur_word = words[0];
         if (bch_code_decode(flex->bch, &cur_word)) {
-            DIAG("Failed to BCH(31, 21) for first word of numeric page");
             ret = A_E_INVAL;
             goto done;
         }
@@ -753,7 +750,6 @@ aresult_t _pager_flex_decode_numeric(struct pager_flex *flex, uint8_t phase, uin
     if (next_word_offs < nr_words) {
         next_word = words[next_word_offs];
         if (bch_code_decode(flex->bch, &next_word)) {
-            DIAG("Failed to BCH(31, 21) for the first following word of numeric page.");
             ret = A_E_INVAL;
             goto done;
         }
@@ -811,7 +807,6 @@ aresult_t _pager_flex_decode_numeric(struct pager_flex *flex, uint8_t phase, uin
             if (next_word_offs < nr_words) {
                 next_word = words[next_word_offs];
                 if (bch_code_decode(flex->bch, &next_word)) {
-                    DIAG("Failed ot BCH(31, 31) for the word at %zu", next_word_offs);
                     ret = A_E_INVAL;
                     goto done;
                 }
@@ -869,10 +864,10 @@ aresult_t _pager_flex_decode_tone(struct pager_flex *flex, uint8_t phase, uint64
         ret = flex->on_num_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id, capcode, flex->msg_buf, flex->msg_len);
         break;
     case PAGER_FLEX_SHORT_TYPE_8_SOURCES:
-        PAG_MSG(SEV_INFO, "TONE", "%02u/%02u/%c [%zu] Sourced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
+        PAG_MSG(SEV_INFO, "TONE", "%02u/%03u/%c [%zu] Sourced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
         break;
     case PAGER_FLEX_SHORT_TYPE_SOURCES_AND_NUM:
-        PAG_MSG(SEV_INFO, "TONE", "%02u/%02u/%c [%zu] Sequenced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
+        PAG_MSG(SEV_INFO, "TONE", "%02u/%03u/%c [%zu] Sequenced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
         break;
 
     case PAGER_FLEX_SHORT_TYPE_UNUSED:
@@ -915,16 +910,16 @@ aresult_t _pager_flex_decode_short_instruction_vec(struct pager_flex *flex, uint
 
     switch (siv_type) {
     case PAGER_FLEX_SIV_TEMP_ADDRESS_ACTIVATION:
-        PAG_MSG(SEV_INFO, "SIV", "%02u/%02u/%c - [%9zu] Temporary Address Activation (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9zu] Temporary Address Activation (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
         break;
     case PAGER_FLEX_SIV_SYSTEM_EVENT:
-        PAG_MSG(SEV_INFO, "SIV", "%02u/%02u/%c - [%9zu] System Event (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9zu] System Event (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
         break;
     case PAGER_FLEX_SIV_RESERVED_TEST:
-        PAG_MSG(SEV_INFO, "SIV", "%02u/%02u/%c - [%9zu] Reserved Test (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9zu] Reserved Test (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
         break;
     default:
-        PAG_MSG(SEV_INFO, "SIV", "%02u/%02u/%c - [%9zu] Unknown SIV %u (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode,
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9zu] Unknown SIV %u (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode,
                 siv_type, siv_data);
     }
 
@@ -1021,7 +1016,7 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint8_t phase, uint
     case PAGER_FLEX_MESSAGE_SECURE:
     case PAGER_FLEX_MESSAGE_HEX:
     case PAGER_FLEX_MESSAGE_NUMBERED_NUMERIC:
-        PAG_MSG(SEV_INFO, "UNSUPP-MSG", "%02u/%02u/%c [%9zu] Unsupported Message: %s", flex->cycle_id, flex->frame_id, phase + 'A', capcode,  __pager_flex_type_code[vec_type]);
+        PAG_MSG(SEV_INFO, "UNSUPP-MSG", "%02u/%03u/%c [%9zu] Unsupported Message: %s", flex->cycle_id, flex->frame_id, phase + 'A', capcode,  __pager_flex_type_code[vec_type]);
         break;
     default:
         /* Shouldn't get here, but just in case... */
@@ -1066,7 +1061,7 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
     biw = phs->phase_words[0] & 0x7ffffffful;
     if (bch_code_decode(flex->bch, &biw)) {
         /* Skip processing the rest of this phase */
-        PAG_MSG(SEV_INFO, "BAD-BIW", "%02u/%02u/%u: Skipping (could not correct BIW %08x)", flex->cycle_id, flex->frame_id,
+        PAG_MSG(SEV_INFO, "BAD-BIW", "%02u/%03u/%u: Skipping (could not correct BIW %08x)", flex->cycle_id, flex->frame_id,
                 phase_id, biw);
         goto done;
     }
@@ -1103,14 +1098,15 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
             /* TODO: we can probably inspect the following address word, figure out if it's the upper half
              * of a long address word, and continue, skipping the bad record. For now, easy mode.
              */
-            DIAG("PHASE %u: Failed to fix address word at offset %zu, we have to abort", phase_id, i);
+            PAG_MSG(SEV_WARNING, "BCH-ERROR", "%02u/%03u/%c Address could not be corrected",
+                    flex->cycle_id, flex->frame_id, phase_id + 'A');
             goto done;
         }
 
         /* Decode per what the vector word indicates */
         if (FAILED_UNLIKELY(_pager_flex_decode_vector(flex, phase_id, capcode, &phs->phase_words[vec_offs], nr_words + 1, phs->phase_words))) {
             /* TODO: increment an error counter */
-            PAG_MSG(SEV_WARNING, "BCH-ERROR", "%02u/%02u/%c [%zu] Uncorrectable Error",
+            PAG_MSG(SEV_WARNING, "BCH-ERROR", "%02u/%03u/%c [%zu] Uncorrectable Error",
                     flex->cycle_id, flex->frame_id, phase_id + 'A', capcode);
         }
 
