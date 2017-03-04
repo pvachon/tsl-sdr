@@ -1061,8 +1061,8 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
     biw = phs->phase_words[0] & 0x7ffffffful;
     if (bch_code_decode(flex->bch, &biw)) {
         /* Skip processing the rest of this phase */
-        PAG_MSG(SEV_INFO, "BAD-BIW", "%02u/%03u/%u: Skipping (could not correct BIW %08x)", flex->cycle_id, flex->frame_id,
-                phase_id, biw);
+        PAG_MSG(SEV_INFO, "BAD-BIW", "%02u/%03u/%c: Skipping (could not correct BIW %08x)", flex->cycle_id, flex->frame_id,
+                phase_id + 'A', biw);
         goto done;
     }
 
