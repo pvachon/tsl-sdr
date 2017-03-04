@@ -869,10 +869,10 @@ aresult_t _pager_flex_decode_tone(struct pager_flex *flex, uint8_t phase, uint64
         ret = flex->on_num_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id, capcode, flex->msg_buf, flex->msg_len);
         break;
     case PAGER_FLEX_SHORT_TYPE_8_SOURCES:
-        PAG_MSG(SEV_INFO, "SOURCED-TONE", "[TON] CAPCODE %zu - Sources [%08x, %08x]", capcode, first_word, second_word);
+        PAG_MSG(SEV_INFO, "TONE", "%02u/%02u/%c [%zu] Sourced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
         break;
     case PAGER_FLEX_SHORT_TYPE_SOURCES_AND_NUM:
-        PAG_MSG(SEV_INFO, "SEQUENCED-TONE", "[TON] CAPCODE %zu - Sequenced [%08x, %08x]", capcode, first_word, second_word);
+        PAG_MSG(SEV_INFO, "TONE", "%02u/%02u/%c [%zu] Sequenced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
         break;
 
     case PAGER_FLEX_SHORT_TYPE_UNUSED:
@@ -895,6 +895,41 @@ aresult_t _pager_flex_decode_short_instruction_vec(struct pager_flex *flex, uint
 {
     aresult_t ret = A_OK;
 
+    unsigned siv_type = 0,
+             siv_data = 0;
+
+    TSL_ASSERT_ARG_DEBUG(NULL != flex);
+
+    vec_word &= 0x7fffff;
+
+    if (0xf != __pager_flex_calc_word_checksum(vec_word)) {
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+    /* Middle 3 bits represent the instruction type */
+    siv_type = (vec_word << 7) & 0x7;
+
+    /* Mask out the top 11 bits for instruction data */
+    siv_data = (vec_word << 11) & 0x7ff;
+
+    switch (siv_type) {
+    case PAGER_FLEX_SIV_TEMP_ADDRESS_ACTIVATION:
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%02u/%c - [%9zu] Temporary Address Activation (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
+        break;
+    case PAGER_FLEX_SIV_SYSTEM_EVENT:
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%02u/%c - [%9zu] System Event (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
+        break;
+    case PAGER_FLEX_SIV_RESERVED_TEST:
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%02u/%c - [%9zu] Reserved Test (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
+        break;
+    default:
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%02u/%c - [%9zu] Unknown SIV %u (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode,
+                siv_type, siv_data);
+    }
+
+
+done:
     return ret;
 }
 
@@ -923,7 +958,6 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint8_t phase, uint
     /* Fix the vector words we'll need, first */
     for (size_t i = 0; i < nr_vec_words; i++) {
         if (bch_code_decode(flex->bch, &vec[i])) {
-            DIAG("BCH(31,21) failed to fix vector word %zu", i);
             ret = A_E_INVAL;
             goto done;
         }
@@ -933,7 +967,6 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint8_t phase, uint
 
     /* Grab the first word, check the checksum */
     if (0xf != (cksum = __pager_flex_calc_word_checksum(vec_word))) {
-        DIAG("Bad checksum. Got %u.", cksum);
         ret = A_E_INVAL;
         goto done;
     }
@@ -978,12 +1011,17 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint8_t phase, uint
             goto done;
         }
         break;
+    case PAGER_FLEX_MESSAGE_SPECIAL_INSTRUCTION:
+        if (FAILED(_pager_flex_decode_short_instruction_vec(flex, phase, capcode, vec_word))) {
+            ret = A_E_INVAL;
+            goto done;
+        }
+        break;
     case PAGER_FLEX_MESSAGE_SPECIAL_NUMERIC:
     case PAGER_FLEX_MESSAGE_SECURE:
-    case PAGER_FLEX_MESSAGE_SPECIAL_INSTRUCTION:
     case PAGER_FLEX_MESSAGE_HEX:
     case PAGER_FLEX_MESSAGE_NUMBERED_NUMERIC:
-        PAG_MSG(SEV_INFO, "UNSUPP-MSG", "[%s] CAPCODE: %9zu", __pager_flex_type_code[vec_type], capcode);
+        PAG_MSG(SEV_INFO, "UNSUPP-MSG", "%02u/%02u/%c [%9zu] Unsupported Message: %s", flex->cycle_id, flex->frame_id, phase + 'A', capcode,  __pager_flex_type_code[vec_type]);
         break;
     default:
         /* Shouldn't get here, but just in case... */
@@ -1028,7 +1066,8 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
     biw = phs->phase_words[0] & 0x7ffffffful;
     if (bch_code_decode(flex->bch, &biw)) {
         /* Skip processing the rest of this phase */
-        PAG_MSG(SEV_INFO, "BAD-BIW", "PHASE %u: Skipping (could not correct BIW %08x)", phase_id, biw);
+        PAG_MSG(SEV_INFO, "BAD-BIW", "%02u/%02u/%u: Skipping (could not correct BIW %08x)", flex->cycle_id, flex->frame_id,
+                phase_id, biw);
         goto done;
     }
 
@@ -1048,12 +1087,10 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
 
     addr_start += biw_eob;
 
-#ifdef _TSL_DEBUG
     if (addr_start == biw_vsw) {
-        PAG_MSG(SEV_INFO, "NO-DATA-IN-PHASE", "%c/%2u/%2u - No Data in Block",
-            phase_id + 'A', flex->frame_id, flex->cycle_id);
+        DIAG("No Data in %02u/%02u/%c",
+            flex->cycle_id, flex->frame_id, phase_id + 'A');
     }
-#endif
 
     /* Walk the address words, and decode them */
     for (size_t i = addr_start; i < biw_vsw; i++) {
@@ -1073,8 +1110,8 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
         /* Decode per what the vector word indicates */
         if (FAILED_UNLIKELY(_pager_flex_decode_vector(flex, phase_id, capcode, &phs->phase_words[vec_offs], nr_words + 1, phs->phase_words))) {
             /* TODO: increment an error counter */
-            DIAG("PHASE %u: vector at offset %d (address %zu, capcode %zu)  had an uncorrectable error",
-                    phase_id, vec_offs, i, capcode);
+            PAG_MSG(SEV_WARNING, "BCH-ERROR", "%02u/%02u/%c [%zu] Uncorrectable Error",
+                    flex->cycle_id, flex->frame_id, phase_id + 'A', capcode);
         }
 
         /* Add the number of additional words consumed to i */
@@ -1210,7 +1247,7 @@ bool _pager_flex_handle_fiw(struct pager_flex *flex)
     /* Handle the FIW for this frame */
     if (0 != bch_code_decode(flex->bch, &fiw)) {
         /* Reset the sync state -- we couldn't correct the FIW */
-        PAG_MSG(SEV_INFO, "BAD-FIW", "Could not correct FIW using BCH code, skipping block.");
+        PAG_MSG(SEV_INFO, "BAD-FIW", "FIW %08x could not be corrected with BCH(31, 23).", fiw);
         return false;
     }
 
