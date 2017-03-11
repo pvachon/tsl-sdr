@@ -1034,12 +1034,15 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
     struct pager_flex_block *blk = NULL;
     struct pager_flex_phase *phs = NULL;
     uint32_t biw = 0;
-    uint8_t biw_cksum = 0,
-            biw_prio = 0,
-            biw_eob = 0,
-            biw_vsw = 0,
+    uint8_t biw_vsw = 0,
+            biw_eob = 0;
+
+#ifdef _TSL_DEBUG
+    uint8_t biw_prio = 0,
             biw_carry = 0,
             biw_m = 0;
+#endif
+
     size_t addr_start = 1;
 
 #ifdef _TSL_DEBUG
@@ -1066,15 +1069,22 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
         goto done;
     }
 
-    biw_cksum = __pager_flex_calc_word_checksum(biw);
+    if (0xf != __pager_flex_calc_word_checksum(biw)) {
+        PAG_MSG(SEV_INFO, "BAD-BIW", "%02u/%03u/%c: Skipping - bad checksum (for BIW %08x)", flex->cycle_id, flex->frame_id,
+                phase_id + 'A', biw);
+        goto done;
+    }
 
+#ifdef _TSL_DEBUG
     biw_prio = (biw >> 4) & 0xf;
-    biw_eob = (biw >> 8) & 0x3;
-    biw_vsw = (biw >> 10) & 0x3f;
     biw_carry = (biw >> 16) & 0x3;
     biw_m = (biw >> 18) & 0x7;
-    DIAG("PHASE %u: BIW: %08x (CkSum:%01x Prio:%01x EoB:%01x VSW:%02x Carry:%01x Collapse:%01x)",
-            phase_id, biw, biw_cksum, biw_prio, biw_eob, biw_vsw, biw_carry, biw_m);
+#endif
+
+    biw_vsw = (biw >> 10) & 0x3f;
+    biw_eob = (biw >> 8) & 0x3;
+    DIAG("PHASE %u: BIW: %08x (Prio:%01x EoB:%01x VSW:%02x Carry:%01x Collapse:%01x)",
+            phase_id, biw, biw_prio, biw_eob, biw_vsw, biw_carry, biw_m);
 
     if (0 != biw_eob) {
         /* TODO: walk any additional Block Information Words */
