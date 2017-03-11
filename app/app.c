@@ -34,6 +34,7 @@
 #include <tsl/version.h>
 
 #include <execinfo.h>
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -276,7 +277,10 @@ aresult_t app_daemonize(void)
     }
 
     /* Set working directory to the root of the filesystem */
-    chdir("/");
+    if (0 != chdir("/")) {
+        int errnum = errno;
+        APP_MSG(SEV_WARNING, "CHDIR-FAILURE", "Failed to chdir to '/': %s (%d)", strerror(errnum), errnum);
+    }
 
     close(STDIN_FILENO);
     close(STDOUT_FILENO);
