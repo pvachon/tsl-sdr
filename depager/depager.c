@@ -81,12 +81,16 @@ static
 double dc_block_pole = 0.9999;
 
 static
+bool _invert = false;
+
+static
 void _usage(const char *appname)
 {
-    DEP_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -d [sample_debug_file] -S [input sample rate] -f [pager chan freq] [-c] [-o output JSON file] [-b] [in_fifo]",
+    DEP_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -d [sample_debug_file] -S [input sample rate] -f [pager chan freq] [-c] [-o output JSON file] [-b] [-i] [in_fifo]",
             appname);
     DEP_MSG(SEV_INFO, "USAGE", "        -b      Enable DC blocking filter");
     DEP_MSG(SEV_INFO, "USAGE", "        -c      Create JSON output file");
+    DEP_MSG(SEV_INFO, "USAGE", "        -i      Invert input sample stream");
     exit(EXIT_SUCCESS);
 }
 
@@ -153,8 +157,8 @@ aresult_t _on_flex_alnum_msg(
         size_t message_len)
 {
     /* TODO: this sucks, should move it closer to the capture clock */
-	time_t now = time(NULL);
-	struct tm *gmt = gmtime(&now);
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
 
     fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"alphanumeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
             "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%9lu,\"fragment\":%s,"
@@ -169,16 +173,7 @@ aresult_t _on_flex_alnum_msg(
 
     fprintf(out_file, "\"}\n");
     fflush(out_file);
-#if 0
-    printf("[ALN] CAPCODE: %9zu | %4u/%c (%2u:%2u) | %c%c [%1u] | ",
-            cap_code, baud, phase_id[phase], cycle_no, frame_no, fragmented ? 'F' : '-',
-            maildrop ? 'M' : '-', seq_num);
-    for (size_t i = 0; i < message_len; i++) {
-        printf("%c", message_bytes[i]);
-    }
-    printf("\n");
-    fflush(stdout);
-#endif
+
     return A_OK;
 }
 
@@ -194,8 +189,8 @@ aresult_t _on_flex_num_msg(
         size_t message_len)
 {
     /* TODO: this sucks, should move it closer to the capture clock */
-	time_t now = time(NULL);
-	struct tm *gmt = gmtime(&now);
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
 
     fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"numeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
             "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%9lu,\"message\":\"",
@@ -208,15 +203,7 @@ aresult_t _on_flex_num_msg(
 
     fprintf(out_file, "\"}\n");
     fflush(out_file);
-#if 0
-    printf("[NUM] CAPCODE: %9zu | %4u/%c (%2u:%2u) |        | ",
-            cap_code, baud, phase_id[phase], cycle_no, frame_no);
-    for (size_t i = 0; i < message_len; i++) {
-        printf("%c", message_bytes[i]);
-    }
-    printf("\n");
-    fflush(stdout);
-#endif
+
     return A_OK;
 }
 
@@ -230,7 +217,7 @@ void _set_options(int argc, char * const argv[])
     double *filter_coeffs_f = NULL;
     bool create_out = false;
 
-    while ((arg = getopt(argc, argv, "co:I:D:S:F:f:d:p:bh")) != -1) {
+    while ((arg = getopt(argc, argv, "co:I:D:S:F:f:d:p:bih")) != -1) {
         switch (arg) {
         case 'o':
             out_file_name = optarg;
@@ -270,6 +257,11 @@ void _set_options(int argc, char * const argv[])
         case 'p':
             dc_block_pole = strtod(optarg, NULL);
             DEP_MSG(SEV_INFO, "DC-BLOCK-POLE", "Setting DC Blocker pole to %f", dc_block_pole);
+            break;
+
+        case 'i':
+            _invert = true;
+            DEP_MSG(SEV_INFO, "INVERTING", "Inverting input sample stream, due to a non-phase correcting input source.");
             break;
 
         case 'h':
@@ -424,6 +416,13 @@ aresult_t process_samples(void)
             TSL_BUG_ON((1 & op_ret) != 0);
 
             read_buf->nr_samples += op_ret/sizeof(int16_t);
+
+            if (true == _invert) {
+                int16_t *samp = (int16_t *)read_buf->data_buf;
+                for (size_t i = 0; i < read_buf->nr_samples; i++) {
+                    samp[i] *= -1;
+                }
+            }
 
             if (read_buf->nr_samples == NR_SAMPLES) {
                 TSL_BUG_IF_FAILED(polyphase_fir_push_sample_buf(pfir, read_buf));
