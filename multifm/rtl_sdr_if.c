@@ -190,6 +190,18 @@ aresult_t _rtl_sdr_worker_thread(struct worker_thread *wthr)
     return ret;
 }
 
+#if 0
+static
+aresult_t __rtl_sdr_worker_e4000_set_if_gain(struct rtlsdr_dev *dev, int if_gain_stage, int if_gain_tenths)
+{
+    aresult_t ret = A_OK;
+
+    TSL_ASSERT_ARG(NULL != dev);
+
+    return ret;
+}
+#endif
+
 static
 aresult_t __rtl_sdr_worker_set_gain(struct rtlsdr_dev *dev, int gain)
 {
@@ -258,6 +270,18 @@ done:
     return ret;
 }
 
+/* Helpful constants for outputing human-readable log messages */
+static const
+char *__rtl_sdr_tuner_names[] = {
+    [RTLSDR_TUNER_UNKNOWN] = "Unknown Tuner Type",
+    [RTLSDR_TUNER_E4000] = "Elonics E4000",
+    [RTLSDR_TUNER_FC0012] = "Fitipower FC0012",
+    [RTLSDR_TUNER_FC0013] = "Fitipower FC0013",
+    [RTLSDR_TUNER_FC2580] = "Fitipower FC2580",
+    [RTLSDR_TUNER_R820T] = "Rafael Micro R820T",
+    [RTLSDR_TUNER_R828D] = "Rafael Micro R828D",
+};
+
 /**
  * Create and start a new worker thread for the RTL-SDR.
  */
@@ -293,6 +317,7 @@ aresult_t rtl_sdr_worker_thread_new(
            *resample_filter_taps = NULL;
     double gain_db = 0.0,
            dc_block_pole = 0.9999;
+    enum rtlsdr_tuner tuner_type = RTLSDR_TUNER_UNKNOWN;
 
 
     TSL_ASSERT_ARG(NULL != cfg);
@@ -381,10 +406,16 @@ aresult_t rtl_sdr_worker_thread_new(
         ret = A_E_INVAL;
         goto done;
     }
+    TSL_BUG_ON(NULL == dev);
+
+    tuner_type = rtlsdr_get_tuner_type(dev);
 
     MFM_MSG(SEV_INFO, "DEV-IDX-OPEN", "Successfully opened device at index %d", dev_idx);
+    MFM_MSG(SEV_INFO, "DEV-IDX-OPEN", "Device: %s Tuner: %s", rtlsdr_get_device_name(dev_idx), __rtl_sdr_tuner_names[(unsigned)tuner_type]);
 
-    TSL_BUG_ON(NULL == dev);
+    if (RTLSDR_TUNER_E4000 != tuner_type && RTLSDR_TUNER_R820T != tuner_type) {
+        MFM_MSG(SEV_WARNING, "DEV-UNTESTED", "This tuner type is not tested, so the performance could be poor");
+    }
 
     /* Set the sample rate */
     MFM_MSG(SEV_INFO, "SAMPLE-RATE", "Setting sample rate to %u Hz", sample_rate);
@@ -464,7 +495,10 @@ aresult_t rtl_sdr_worker_thread_new(
         }
     }
 
-    DIAG("Gain set to: %f", (double)rtlsdr_get_tuner_gain(dev)/10.0);
+    DIAG("LNA gain set to: %f", (double)rtlsdr_get_tuner_gain(dev)/10.0);
+
+    /* Set the IF gain(s) */
+
 
     /* Create the worker thread context */
     if (FAILED(TZAALLOC(thr, SYS_CACHE_LINE_LENGTH))) {

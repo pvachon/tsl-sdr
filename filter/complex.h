@@ -38,7 +38,7 @@ int16_t round_q30_q15(int32_t a)
  * possible.
  */
 static inline
-void cmul_q15_q30(int16_t a_re, int16_t a_im, int16_t b_re, int16_t b_im,
+void cmul_q15_q30(int32_t a_re, int32_t a_im, int32_t b_re, int32_t b_im,
                   int32_t *r_re, int32_t *r_im)
 {
     *r_re = a_re * b_re - a_im * b_im;
