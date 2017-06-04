@@ -1,7 +1,7 @@
 {
   "deviceIndex" : 0,
   "dBGain" : 16.6,
-  "dbGainIF" : [ 0, 0, 0, 0, 0, 0 ],
+  "dbGainIF" : 14.0,
   "sampleRateHz" : 1000000,
   "centerFreqHz" : 929500000,
   "nrSampBufs" : 128,

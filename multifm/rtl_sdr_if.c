@@ -190,17 +190,51 @@ aresult_t _rtl_sdr_worker_thread(struct worker_thread *wthr)
     return ret;
 }
 
-#if 0
 static
-aresult_t __rtl_sdr_worker_e4000_set_if_gain(struct rtlsdr_dev *dev, int if_gain_stage, int if_gain_tenths)
+aresult_t __rtl_sdr_worker_e4000_set_if_gain(struct rtlsdr_dev *dev, int if_gain_tenths)
 {
     aresult_t ret = A_OK;
 
+    /* Initial gains for each stage, in 10th's of a dB */
+    int gains[6] = { -30, 0, 0, 0, 30, 30 };
+    /* Steps */
+    int steps[6] = { 90, 30, 30, 10, 30, 30 };
+    int max[6] = { 60, 90, 90, 20, 150, 150 };
+
+    /* Current gain */
+    int cur_gain = 30,
+        last_gain = 0;
+
     TSL_ASSERT_ARG(NULL != dev);
+
+    /* Continue to iterate until no changes occur */
+    while (last_gain != cur_gain) {
+        last_gain = cur_gain;
+        /* Walk each IF stage and try to adjust the gain accordingly */
+        for (int i = 0; i < 6; i++) {
+            if (steps[i] + gains[i] > max[i]) {
+                continue;
+            }
+
+            if (if_gain_tenths - cur_gain > steps[i]) {
+                gains[i] += steps[i];
+                cur_gain += steps[i];
+            }
+        }
+    }
+
+    DIAG("Desired gain: %d Selected gain: %d", if_gain_tenths, cur_gain);
+    DIAG("Gains: { %d, %d, %d, %d, %d, %d }", gains[0], gains[1], gains[2], gains[3], gains[4], gains[5]);
+
+    for (int i = 0; i < 6; i++) {
+        if (0 != rtlsdr_set_tuner_if_gain(dev, i + 1, gains[i])) {
+            MFM_MSG(SEV_WARNING, "FAILED-SETTING-GAIN", "Failed to set IF gain stage %d to value %d",
+                    i + 1, gains[i]);
+        }
+    }
 
     return ret;
 }
-#endif
 
 static
 aresult_t __rtl_sdr_worker_set_gain(struct rtlsdr_dev *dev, int gain)
@@ -316,7 +350,8 @@ aresult_t rtl_sdr_worker_thread_new(
     double *lpf_taps = NULL,
            *resample_filter_taps = NULL;
     double gain_db = 0.0,
-           dc_block_pole = 0.9999;
+           dc_block_pole = 0.9999,
+           if_gain_db = 0.0;
     enum rtlsdr_tuner tuner_type = RTLSDR_TUNER_UNKNOWN;
 
 
@@ -440,6 +475,12 @@ aresult_t rtl_sdr_worker_thread_new(
     } else {
         MFM_MSG(SEV_INFO, "AUTO-GAIN-CONTROL", "Enabling automatic gain control.");
         TSL_BUG_ON(0 != rtlsdr_set_tuner_gain_mode(dev, 0));
+    }
+
+    if (tuner_type == RTLSDR_TUNER_E4000) {
+        if (!FAILED(config_get_float(cfg, &if_gain_db, "dbGainIF"))) {
+            TSL_BUG_IF_FAILED(__rtl_sdr_worker_e4000_set_if_gain(dev, if_gain_db * 10));
+        }
     }
 
     /* Set the PPM correction, if specified */
