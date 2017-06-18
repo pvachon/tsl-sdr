@@ -116,13 +116,21 @@ struct demod_thread {
 };
 
 aresult_t demod_thread_delete(struct demod_thread **pthr);
+
+/**
+ * Create a new demodulation thread.
+ *
+ * \param demod_gain The gain of the channelizing FIR, expressed in linear units.
+ *
+ */
 aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
         const double *lpf_taps, size_t lpf_nr_taps,
         unsigned resample_decimate, unsigned resample_interpolate, const double *resample_filter_taps,
         size_t nr_resample_filter_taps,
         const char *fir_debug_output,
-        double dc_block_pole, bool enable_dc_block);
+        double dc_block_pole, bool enable_dc_block,
+        double channel_gain);
 
 float fast_atan2f(float y, float x);
 

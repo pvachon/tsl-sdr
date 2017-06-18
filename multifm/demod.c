@@ -223,7 +223,7 @@ aresult_t demod_thread_delete(struct demod_thread **pthr)
  * \return A_OK on success, an error code otherwise
  */
 static
-aresult_t _demod_fir_prepare(struct demod_thread *thr, const double *lpf_taps, size_t lpf_nr_taps, int32_t offset_hz, uint32_t sample_rate, int decimation)
+aresult_t _demod_fir_prepare(struct demod_thread *thr, const double *lpf_taps, size_t lpf_nr_taps, int32_t offset_hz, uint32_t sample_rate, int decimation, double gain)
 {
     aresult_t ret = A_OK;
 
@@ -252,7 +252,7 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, const double *lpf_taps, s
 
     for (size_t i = 0; i < lpf_nr_taps; i++) {
         /* Calculate the new tap coefficient */
-        const double complex lpf_tap = cexp(CMPLX(0, f_offs * (double)i)) * lpf_taps[i];
+        const double complex lpf_tap = gain * cexp(CMPLX(0, f_offs * (double)i)) * lpf_taps[i];
         const double q15 = 1ll << Q_15_SHIFT;
 #ifdef _DUMP_LPF
         double ptemp = 0;
@@ -295,7 +295,8 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         unsigned resample_decimate, unsigned resample_interpolate, const double *resample_filter_taps,
         size_t nr_resample_filter_taps,
         const char *fir_debug_output,
-        double dc_block_pole, bool enable_dc_block)
+        double dc_block_pole, bool enable_dc_block,
+        double channel_gain)
 {
     aresult_t ret = A_OK;
 
@@ -340,7 +341,7 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
     }
 
     /* Initialize the filter */
-    if (FAILED(ret = _demod_fir_prepare(thr, lpf_taps, lpf_nr_taps, offset_hz, samp_hz, decimation_factor))) {
+    if (FAILED(ret = _demod_fir_prepare(thr, lpf_taps, lpf_nr_taps, offset_hz, samp_hz, decimation_factor, channel_gain))) {
         goto done;
     }
 

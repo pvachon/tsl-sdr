@@ -565,6 +565,8 @@ aresult_t rtl_sdr_worker_thread_new(
                    *signal_debug = NULL;
         int nb_center_freq = -1;
         struct demod_thread *dmt = NULL;
+        double channel_gain = 1.0,
+               channel_gain_db = 0.0;
 
         if (FAILED(ret = config_get_string(&channel, &fifo_name, "outFifo"))) {
             MFM_MSG(SEV_ERROR, "MISSING-FIFO-ID", "Missing output FIFO filename, aborting.");
@@ -581,6 +583,12 @@ aresult_t rtl_sdr_worker_thread_new(
                     nb_center_freq, signal_debug);
         }
 
+        if (!FAILED(ret = config_get_float(&channel, &channel_gain_db, "dBGain"))) {
+            /* Convert the gain to linear units */
+            channel_gain = pow(10.0, channel_gain_db/10.0);
+            DIAG("Setting input channel gain to: %f (%f dB)", channel_gain, channel_gain_db);
+        }
+
         DIAG("Center Frequency: %d Hz FIFO: %s", nb_center_freq, fifo_name);
 
         /* Create demodulator thread object */
@@ -589,7 +597,8 @@ aresult_t rtl_sdr_worker_thread_new(
                         resample_decimate, resample_interpolate, resample_filter_taps,
                         nr_resample_filter_taps,
                         signal_debug,
-                        dc_block_pole, enable_dc_block)))
+                        dc_block_pole, enable_dc_block,
+                        channel_gain)))
         {
             MFM_MSG(SEV_ERROR, "FAILED-DEMOD-THREAD", "Failed to create demodulator thread, aborting.");
             goto done;
