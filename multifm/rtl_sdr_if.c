@@ -34,7 +34,6 @@
 #include <tsl/errors.h>
 #include <tsl/diag.h>
 #include <tsl/assert.h>
-#include <tsl/frame_alloc.h>
 
 #include <stdatomic.h>
 #include <errno.h>
@@ -48,30 +47,42 @@
 #include <rtl-sdr.h>
 
 #define RTL_SDR_CONVERSION_SHIFT        7
+#define RTL_SDR_DEFAULT_NR_SAMPLES      (16 * 32 * 512/2)
 
-/**
- * Free a live sample buffer.
- *
- * \param buf The buffer to free
- * 
- * \return A_OK on success, an error code otherwise.
- */
 static
-aresult_t _sample_buf_release(struct sample_buf *buf)
+aresult_t _rtl_sdr_worker_thread_delete(struct receiver *rx)
 {
     aresult_t ret = A_OK;
 
-    struct frame_alloc *fa = NULL;
+    struct rtl_sdr_thread *thr = NULL;
 
-    TSL_ASSERT_ARG(NULL != buf);
-    TSL_BUG_ON(atomic_load(&buf->refcount) != 0);
+    TSL_ASSERT_ARG(NULL != rx);
 
-    fa = buf->priv;
+    thr = BL_CONTAINER_OF(rx, struct rtl_sdr_thread, rx);
 
-    TSL_BUG_IF_FAILED(frame_free(fa, (void **)&buf));
+    if (NULL == thr) {
+        goto done;
+    }
 
+    TSL_BUG_ON(0 != rtlsdr_cancel_async(thr->dev));
+
+    if (NULL != thr->dev) {
+        DIAG("Releasing RTL-SDR device.");
+        rtlsdr_close(thr->dev);
+        thr->dev = NULL;
+    }
+
+    if (0 <= thr->dump_fd) {
+        close(thr->dump_fd);
+        thr->dump_fd = -1;
+    }
+
+    TFREE(thr);
+
+done:
     return ret;
 }
+
 
 /**
  * RTL-SDR API Callback, hit every time there is a full sample buffer to be
@@ -90,7 +101,7 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
     int16_t *sbuf_ptr = NULL;
     struct demod_thread *dthr = NULL;
 
-    if (true == thr->muted) {
+    if (true == thr->rx.muted) {
         DIAG("Worker is muted.");
         /* If the receiver side is muted, there's no need to process this buffer */
         goto done;
@@ -102,14 +113,9 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
         }
     }
 
-    /* Allocate an output buffer */
-    if (FAILED(frame_alloc(thr->samp_alloc, (void **)&sbuf))) {
-        MFM_MSG(SEV_INFO, "NO-SAMPLE-BUFFER", "Out of sample buffers.");
+    if (FAILED(receiver_sample_buf_alloc(&thr->rx, &sbuf))) {
         goto done;
     }
-
-    sbuf->release = _sample_buf_release;
-    sbuf->priv = thr->samp_alloc;
 
     sbuf_ptr = (int16_t *)sbuf->data_buf;
 
@@ -153,12 +159,12 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
 #endif
 
     sbuf->nr_samples = len / 2;
-    atomic_store(&sbuf->refcount, thr->nr_demod_threads);
+    atomic_store(&sbuf->refcount, thr->rx.nr_demod_threads);
 
     /* TODO: Apply the DC filter.. maybe */
 
     /* Make it available to each demodulator/processing thread */
-    list_for_each_type(dthr, &thr->demod_threads, dt_node) {
+    list_for_each_type(dthr, &thr->rx.demod_threads, dt_node) {
         pthread_mutex_lock(&dthr->wq_mtx);
         TSL_BUG_IF_FAILED(work_queue_push(&dthr->wq, sbuf));
         pthread_mutex_unlock(&dthr->wq_mtx);
@@ -171,11 +177,11 @@ done:
 }
 
 static
-aresult_t _rtl_sdr_worker_thread(struct worker_thread *wthr)
+aresult_t _rtl_sdr_worker_thread(struct receiver *rx)
 {
     aresult_t ret = A_OK;
 
-    struct rtl_sdr_thread *thr = BL_CONTAINER_OF(wthr, struct rtl_sdr_thread, wthr);
+    struct rtl_sdr_thread *thr = BL_CONTAINER_OF(rx, struct rtl_sdr_thread, rx);
     int rtl_ret = 0;
 
     DIAG("Starting RTL-SDR worker thread");
@@ -320,17 +326,11 @@ char *__rtl_sdr_tuner_names[] = {
  * Create and start a new worker thread for the RTL-SDR.
  */
 aresult_t rtl_sdr_worker_thread_new(
-        struct config *cfg,
-        uint32_t center_freq,
-        uint32_t sample_rate,
-        struct frame_alloc *samp_buf_alloc,
-        struct rtl_sdr_thread **pthr)
+        struct receiver **pthr,
+        struct config *cfg)
 {
     aresult_t ret = A_OK;
 
-    struct config channel = CONFIG_INIT_EMPTY,
-                  channels = CONFIG_INIT_EMPTY,
-                  rational_resampler = CONFIG_INIT_EMPTY;
     struct rtl_sdr_thread *thr = NULL;
     struct rtlsdr_dev *dev = NULL;
     const char *rtl_dump_file = NULL;
@@ -338,101 +338,33 @@ aresult_t rtl_sdr_worker_thread_new(
         rret = 0,
         ppm_corr = 0,
         rtl_ret = 0,
-        decimation_factor = 0,
         dump_file_fd = -1,
-        resample_decimate = 0,
-        resample_interpolate = 0;
-    size_t arr_ctr = 0,
-           lpf_nr_taps = 0,
-           nr_resample_filter_taps = 0;
-    bool test_mode = false,
-         enable_dc_block = false;
-    double *lpf_taps = NULL,
-           *resample_filter_taps = NULL;
-    double gain_db = 0.0,
-           dc_block_pole = 0.9999,
-           if_gain_db = 0.0;
+        sample_rate = 0,
+        center_freq = 0;
+    bool test_mode = false;
+    double if_gain_db = 0.0,
+           gain_db = 1.0;
     enum rtlsdr_tuner tuner_type = RTLSDR_TUNER_UNKNOWN;
 
 
     TSL_ASSERT_ARG(NULL != cfg);
     TSL_ASSERT_ARG(NULL != pthr);
-    TSL_ASSERT_ARG(NULL != samp_buf_alloc);
 
     *pthr = NULL;
 
-    /* Grab the decimation factor and other parameters first, just to validate them. */
-    if (FAILED(ret = config_get_integer(cfg, &decimation_factor, "decimationFactor"))) {
-        decimation_factor = 1;
-        MFM_MSG(SEV_INFO, "NO-DECIMATION", "Not decimating the output signal: using full bandwidth.");
-        ret = A_E_INVAL;
+    if (FAILED(ret = config_get_integer(cfg, &sample_rate, "sampleRateHz"))) {
+        MFM_MSG(SEV_INFO, "NO-SAMPLE-RATE", "Need to specify a sample rate, in Hertz.");
         goto done;
     }
 
-    if (0 >= decimation_factor) {
-        MFM_MSG(SEV_ERROR, "BAD-DECIMATION-FACTOR", "Decimation factor of '%d' is not valid.",
-                decimation_factor);
-        ret = A_E_INVAL;
+    if (FAILED(ret = config_get_integer(cfg, &center_freq, "centerFreqHz"))) {
+        MFM_MSG(SEV_INFO, "NO-CENTER-FREQ", "You forgot to specify a center frequency, in Hz.");
         goto done;
-    }
-
-    /* Check that there's a filter specified */
-    if (FAILED(ret = config_get_float_array(cfg, &lpf_taps, &lpf_nr_taps, "lpfTaps"))) {
-        MFM_MSG(SEV_ERROR, "BAD-FILTER-TAPS", "Need to provide a baseband filter with at least two filter taps as 'lpfTaps'.");
-        goto done;
-    }
-
-    if (1 >= lpf_nr_taps) {
-        MFM_MSG(SEV_ERROR, "INSUFF-FILTER-TAPS", "Not enough filter taps for the low-pass filter.");
-        ret = A_E_INVAL;
-        goto done;
-    }
-
-    /* Grab the rational resampler taps, if appropriate */
-    if (!FAILED(config_get(cfg, &rational_resampler, "rationalResampler"))) {
-        DIAG("Preparing the rational resampler.");
-
-        if (FAILED(ret = config_get_integer(&rational_resampler, &resample_decimate, "decimate"))) {
-            MFM_MSG(SEV_ERROR, "MISSING-DECIMATE", "Need to specify the decimation factor for the rational resampler.");
-            goto done;
-        }
-
-        if (0 >= resample_decimate) {
-            ret = A_E_INVAL;
-            MFM_MSG(SEV_ERROR, "BAD-DECIMATION-FACTOR", "The decimation factor for the rational resampler must be a non-zero positive integer.");
-            goto done;
-        }
-
-        if (FAILED(ret = config_get_integer(&rational_resampler, &resample_interpolate, "interpolate"))) {
-            MFM_MSG(SEV_ERROR, "MISSING-INTERPOLATE", "Need to specify the interpolation factor for the rational resampler.");
-            goto done;
-        }
-
-        if (0 >= resample_interpolate) {
-            ret = A_E_INVAL;
-            MFM_MSG(SEV_ERROR, "BAD-INTERPOLATION-FACTOR", "The interpolation factor for the rational resampler must be a non-zero positive integer.");
-            goto done;
-        }
-
-        if (FAILED(ret = config_get_float_array(&rational_resampler, &resample_filter_taps, &nr_resample_filter_taps, "filterCoefficients"))) {
-            MFM_MSG(SEV_ERROR, "MISSING-RESAMPLE-FILTER-COEFF", "Missing filter coefficients for the resampling filter.");
-            goto done;
-        }
-
-        if (0 == nr_resample_filter_taps || resample_interpolate > nr_resample_filter_taps) {
-            ret = A_E_INVAL;
-            MFM_MSG(SEV_ERROR, "NO-RESAMPLE-TAPS", "Rational resampler filter taps must not be empty or there must be enough taps to perform an interpolation.");
-            goto done;
-        }
-
-        MFM_MSG(SEV_INFO, "RATIONAL-RESAMPLER", "Using Rational Resampler with to resample the output rate to %d/%d with %zu taps in filter.",
-                resample_interpolate, resample_decimate, nr_resample_filter_taps);
     }
 
     /* Figure out which RTL-SDR device we want. */
     if (FAILED(ret = config_get_integer(cfg, &dev_idx, "deviceIndex"))) {
         MFM_MSG(SEV_ERROR, "NO-DEV-SPEC", "Need to specify a 'deviceIndex' entry in configuration");
-        ret = A_E_INVAL;
         goto done;
     }
 
@@ -483,6 +415,8 @@ aresult_t rtl_sdr_worker_thread_new(
         }
     }
 
+    DIAG("LNA gain set to: %f", (double)rtlsdr_get_tuner_gain(dev)/10.0);
+
     /* Set the PPM correction, if specified */
     if (FAILED(config_get_integer(cfg, &ppm_corr, "ppmCorrection"))) {
         ppm_corr = 0;
@@ -517,7 +451,7 @@ aresult_t rtl_sdr_worker_thread_new(
     TSL_BUG_ON(0 != rtlsdr_reset_buffer(dev));
 
     /* For debugging purposes, enable test mode. */
-    if (!FAILED(ret = config_get_boolean(cfg, &test_mode, "sdrTestMode")) & (true == test_mode)) {
+    if (!FAILED(config_get_boolean(cfg, &test_mode, "sdrTestMode")) & (true == test_mode)) {
         MFM_MSG(SEV_INFO, "TEST-MODE", "Enabling RTL-SDR test mode");
         if (0 != rtlsdr_set_testmode(dev, 1)) {
             MFM_MSG(SEV_ERROR, "CANT-SET-TEST-MODE", "Failed to enable test mode, aborting.");
@@ -526,21 +460,6 @@ aresult_t rtl_sdr_worker_thread_new(
         }
     }
 
-    if (!FAILED(ret = config_get_boolean(cfg, &enable_dc_block, "enableDCBlocker"))) {
-        if (true == enable_dc_block) {
-            if (FAILED(ret = config_get_float(cfg, &dc_block_pole, "dcBlockerPole"))) {
-                dc_block_pole = 0.9999;
-            }
-
-            MFM_MSG(SEV_INFO, "DC-BLOCK-ENABLE", "Enabled DC Blocker. Using pole value %f.", dc_block_pole);
-        }
-    }
-
-    DIAG("LNA gain set to: %f", (double)rtlsdr_get_tuner_gain(dev)/10.0);
-
-    /* Set the IF gain(s) */
-
-
     /* Create the worker thread context */
     if (FAILED(TZAALLOC(thr, SYS_CACHE_LINE_LENGTH))) {
         ret = A_E_NOMEM;
@@ -548,86 +467,18 @@ aresult_t rtl_sdr_worker_thread_new(
     }
 
     thr->dev = dev;
-    thr->muted = true;
-    thr->samp_alloc = samp_buf_alloc;
     thr->dump_fd = dump_file_fd;
-    list_init(&thr->demod_threads);
-
-    /* Create the demodulator threads, walking the list of channels to be processed. */
-    if (FAILED(ret = config_get(cfg, &channels, "channels"))) {
-        MFM_MSG(SEV_ERROR, "MISSING-CHANNELS", "Need to specify at least one channel to demodulate.");
-        ret = A_E_INVAL;
-        goto done;
-    }
-
-    CONFIG_ARRAY_FOR_EACH(channel, &channels, ret, arr_ctr) {
-        const char *fifo_name = NULL,
-                   *signal_debug = NULL;
-        int nb_center_freq = -1;
-        struct demod_thread *dmt = NULL;
-        double channel_gain = 1.0,
-               channel_gain_db = 0.0;
-
-        if (FAILED(ret = config_get_string(&channel, &fifo_name, "outFifo"))) {
-            MFM_MSG(SEV_ERROR, "MISSING-FIFO-ID", "Missing output FIFO filename, aborting.");
-            goto done;
-        }
-
-        if (FAILED(ret = config_get_integer(&channel, &nb_center_freq, "chanCenterFreq"))) {
-            MFM_MSG(SEV_ERROR, "MISSING-CENTER-FREQ", "Missing output channel center frequency.");
-            goto done;
-        }
-
-        if (!FAILED(ret = config_get_string(&channel, &signal_debug, "signalDebugFile"))) {
-            MFM_MSG(SEV_INFO, "WRITING-SIGNAL-DEBUG", "The channel at frequency %d will have raw I/Q written to '%s'",
-                    nb_center_freq, signal_debug);
-        }
-
-        if (!FAILED(ret = config_get_float(&channel, &channel_gain_db, "dBGain"))) {
-            /* Convert the gain to linear units */
-            channel_gain = pow(10.0, channel_gain_db/10.0);
-            DIAG("Setting input channel gain to: %f (%f dB)", channel_gain, channel_gain_db);
-        }
-
-        DIAG("Center Frequency: %d Hz FIFO: %s", nb_center_freq, fifo_name);
-
-        /* Create demodulator thread object */
-        if (FAILED(ret = demod_thread_new(&dmt, -1, (int32_t)nb_center_freq - center_freq,
-                        sample_rate, fifo_name, decimation_factor, lpf_taps, lpf_nr_taps,
-                        resample_decimate, resample_interpolate, resample_filter_taps,
-                        nr_resample_filter_taps,
-                        signal_debug,
-                        dc_block_pole, enable_dc_block,
-                        channel_gain)))
-        {
-            MFM_MSG(SEV_ERROR, "FAILED-DEMOD-THREAD", "Failed to create demodulator thread, aborting.");
-            goto done;
-        }
-
-        list_init(&dmt->dt_node);
-        list_append(&thr->demod_threads, &dmt->dt_node);
-        thr->nr_demod_threads++;
-    }
-    if (FAILED(ret)) {
-        MFM_MSG(SEV_ERROR, "CHANNEL-SETUP-FAILURE", "Error reading array of channels, aborting.");
-        goto done;
-    }
 
     /* Initialize the worker thread */
-    if (FAILED(ret = worker_thread_new(&thr->wthr, _rtl_sdr_worker_thread, WORKER_THREAD_CPU_MASK_ANY))) {
-        MFM_MSG(SEV_ERROR, "THREAD-START-FAIL", "Failed to start worker thread, aborting.");
-        goto done;
-    }
+    TSL_BUG_IF_FAILED(receiver_init(&thr->rx, cfg, _rtl_sdr_worker_thread, _rtl_sdr_worker_thread_delete,
+                RTL_SDR_DEFAULT_NR_SAMPLES));
 
-    *pthr = thr;
+    /* The caller can start the thread at its leisure now */
+    *pthr = &thr->rx;
 
 done:
-    if (NULL != lpf_taps) {
-        TFREE(lpf_taps);
-    }
-
     if (FAILED(ret)) {
-        if (0 >= dump_file_fd) {
+        if (0 <= dump_file_fd) {
             close(dump_file_fd);
             dump_file_fd = -1;
         }
@@ -640,48 +491,7 @@ done:
             TFREE(thr);
         }
     }
+
     return ret;
-}
-
-void rtl_sdr_worker_thread_delete(struct rtl_sdr_thread **pthr)
-{
-    struct rtl_sdr_thread *thr = NULL;
-    struct demod_thread *cur = NULL,
-                        *tmp = NULL;
-
-    if (NULL == pthr) {
-        goto done;
-    }
-
-    thr = *pthr;
-
-    if (NULL == thr) {
-        goto done;
-    }
-
-    TSL_BUG_ON(0 != rtlsdr_cancel_async(thr->dev));
-    TSL_BUG_IF_FAILED(worker_thread_request_shutdown(&thr->wthr));
-    TSL_BUG_IF_FAILED(worker_thread_delete(&thr->wthr));
-
-    list_for_each_type_safe(cur, tmp, &thr->demod_threads, dt_node) {
-        list_del(&cur->dt_node);
-        TSL_BUG_IF_FAILED(demod_thread_delete(&cur));
-    }
-
-    if (NULL != thr->dev) {
-        DIAG("Releasing RTL-SDR device.");
-        rtlsdr_close(thr->dev);
-        thr->dev = NULL;
-    }
-
-    if (0 <= thr->dump_fd) {
-        close(thr->dump_fd);
-        thr->dump_fd = -1;
-    }
-
-    TFREE(thr);
-
-done:
-    return;
 }
 
