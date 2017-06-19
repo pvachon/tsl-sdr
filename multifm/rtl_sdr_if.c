@@ -333,6 +333,7 @@ aresult_t rtl_sdr_worker_thread_new(
 
     struct rtl_sdr_thread *thr = NULL;
     struct rtlsdr_dev *dev = NULL;
+    struct config device = CONFIG_INIT_EMPTY;
     const char *rtl_dump_file = NULL;
     int dev_idx = -1,
         rret = 0,
@@ -352,6 +353,8 @@ aresult_t rtl_sdr_worker_thread_new(
 
     *pthr = NULL;
 
+    TSL_BUG_IF_FAILED(config_get(cfg, &device, "device"));
+
     if (FAILED(ret = config_get_integer(cfg, &sample_rate, "sampleRateHz"))) {
         MFM_MSG(SEV_INFO, "NO-SAMPLE-RATE", "Need to specify a sample rate, in Hertz.");
         goto done;
@@ -363,7 +366,7 @@ aresult_t rtl_sdr_worker_thread_new(
     }
 
     /* Figure out which RTL-SDR device we want. */
-    if (FAILED(ret = config_get_integer(cfg, &dev_idx, "deviceIndex"))) {
+    if (FAILED(ret = config_get_integer(&device, &dev_idx, "deviceIndex"))) {
         MFM_MSG(SEV_ERROR, "NO-DEV-SPEC", "Need to specify a 'deviceIndex' entry in configuration");
         goto done;
     }
@@ -401,7 +404,7 @@ aresult_t rtl_sdr_worker_thread_new(
     }
 
     /* Set the gain, in deci-decibels */
-    if (!FAILED(config_get_float(cfg, &gain_db, "dBGain"))) {
+    if (!FAILED(config_get_float(&device, &gain_db, "dBGainLNA"))) {
         /* Set the receiver gain based on the value in config */
         TSL_BUG_IF_FAILED(__rtl_sdr_worker_set_gain(dev, gain_db * 10));
     } else {
@@ -410,7 +413,7 @@ aresult_t rtl_sdr_worker_thread_new(
     }
 
     if (tuner_type == RTLSDR_TUNER_E4000) {
-        if (!FAILED(config_get_float(cfg, &if_gain_db, "dbGainIF"))) {
+        if (!FAILED(config_get_float(&device, &if_gain_db, "dbGainIF"))) {
             TSL_BUG_IF_FAILED(__rtl_sdr_worker_e4000_set_if_gain(dev, if_gain_db * 10));
         }
     }
@@ -418,7 +421,7 @@ aresult_t rtl_sdr_worker_thread_new(
     DIAG("LNA gain set to: %f", (double)rtlsdr_get_tuner_gain(dev)/10.0);
 
     /* Set the PPM correction, if specified */
-    if (FAILED(config_get_integer(cfg, &ppm_corr, "ppmCorrection"))) {
+    if (FAILED(config_get_integer(&device, &ppm_corr, "ppmCorrection"))) {
         ppm_corr = 0;
     }
 
@@ -434,7 +437,7 @@ aresult_t rtl_sdr_worker_thread_new(
     MFM_MSG(SEV_INFO, "FREQ-CORR", "Set frequency correction to %d PPM", ppm_corr);
 
     /* Debug option: Dump the raw samples from the RTL SDR to a file on disk */
-    if (!FAILED(config_get_string(cfg, &rtl_dump_file, "iqDumpFile"))) {
+    if (!FAILED(config_get_string(&device, &rtl_dump_file, "iqDumpFile"))) {
         /* Open the file, exclusive */
         if (0 > (dump_file_fd = open(rtl_dump_file, O_RDWR | O_CREAT | O_EXCL, 0666))) {
             int errnum = errno;

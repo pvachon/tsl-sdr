@@ -1,6 +1,9 @@
 {
-  "deviceIndex" : 0,
-  "dBGain" : 20.7,
+  "device" : {
+    "type" : "rtlsdr",
+    "deviceIndex" : 0,
+    "dBGainLNA" : 20.7
+  },
   "sampleRateHz" : 1000000,
   "centerFreqHz" : 929500000,
   "nrSampBufs" : 128,

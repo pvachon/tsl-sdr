@@ -73,7 +73,9 @@ int main(int argc, const char *argv[])
 {
     int ret = EXIT_FAILURE;
     struct config *cfg CAL_CLEANUP(config_delete) = NULL;
+    struct config device = CONFIG_INIT_EMPTY;
     struct receiver *rx_thr = NULL;
+    const char *dev_type = NULL;
 
     if (argc < 2) {
         _usage(argv[0]);
@@ -95,8 +97,24 @@ int main(int argc, const char *argv[])
     TSL_BUG_IF_FAILED(app_init("multifm", cfg));
     TSL_BUG_IF_FAILED(app_sigint_catch(NULL));
 
+    /* Figure out what kind of device we should initialize */
+    if (FAILED(config_get(cfg, &device, "device"))) {
+        MFM_MSG(SEV_FATAL, "MALFORMED-CONFIG", "Configuration is missing 'device' stanza. Aborting.");
+        goto done;
+    }
+
+    if (FAILED(config_get_string(&device, &dev_type, "type"))) {
+        MFM_MSG(SEV_FATAL, "MALFORMED-CONFIG", "The 'device' stanza is missing a 'type' specification. Aborting.");
+        goto done;
+    }
+
     /* Prepare the RTL-SDR thread and demod threads */
-    TSL_BUG_IF_FAILED(rtl_sdr_worker_thread_new(&rx_thr, cfg));
+    if (!strncmp(dev_type, "rtlsdr", 6)) {
+        TSL_BUG_IF_FAILED(rtl_sdr_worker_thread_new(&rx_thr, cfg));
+    } else {
+        MFM_MSG(SEV_FATAL, "UNKNOWN-DEV-TYPE", "Unknown device type: '%s'", dev_type);
+        goto done;
+    }
 
     TSL_BUG_IF_FAILED(receiver_set_mute(rx_thr, false));
 
