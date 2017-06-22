@@ -37,7 +37,7 @@
 #include <tsl/frame_alloc.h>
 
 #include <stdlib.h>
-#include <complex.h>
+#include <string.h>
 
 #include <rtl-sdr.h>
 
