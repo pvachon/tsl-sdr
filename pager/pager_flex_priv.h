@@ -252,6 +252,11 @@ struct pager_flex {
     pager_flex_on_num_msg_func_t on_num_msg;
 
     /**
+     * Callback hit on a Special Instruction Vector message
+     */
+    pager_flex_on_siv_msg_func_t on_siv_msg;
+
+    /**
      * Synchronization state for the FLEX message stream
      */
     struct pager_flex_sync sync;

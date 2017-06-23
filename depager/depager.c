@@ -161,7 +161,7 @@ aresult_t _on_flex_alnum_msg(
     struct tm *gmt = gmtime(&now);
 
     fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"alphanumeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
-            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%9lu,\"fragment\":%s,"
+            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%lu,\"fragment\":%s,"
             "\"maildrop\":%s,\"fragSeq\":%u,\"message\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             baud, 0, frame_no, cycle_no, phase_id[phase], cap_code,
@@ -193,7 +193,7 @@ aresult_t _on_flex_num_msg(
     struct tm *gmt = gmtime(&now);
 
     fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"numeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
-            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%9lu,\"message\":\"",
+            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%lu,\"message\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             baud, 0, frame_no, cycle_no, phase_id[phase], cap_code);
 
@@ -204,6 +204,32 @@ aresult_t _on_flex_num_msg(
     fprintf(out_file, "\"}\n");
     fflush(out_file);
 
+    return A_OK;
+}
+
+static
+aresult_t _on_flex_siv_msg(
+        struct pager_flex *f,
+        uint16_t baud,
+        uint8_t phase,
+        uint8_t cycle_no,
+        uint8_t frame_no,
+        uint64_t cap_code,
+        uint8_t siv_msg_type,
+        uint32_t data)
+{
+    /* TODO: this sucks, should move it closer to the capture clock */
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+
+    switch (siv_msg_type) {
+    case PAGER_FLEX_SIV_TEMP_ADDRESS_ACTIVATION:
+        fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"tempAddrActivation\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+                "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%lu,\"startFrameNo\":%u,\"tempAddressId\":%u}\n",
+                gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                baud, 0, frame_no, cycle_no, phase_id[phase], cap_code, data & 0x7f, (data >> 7) & 0xf);
+        break;
+    }
     return A_OK;
 }
 
@@ -471,7 +497,7 @@ int main(int argc, char * const argv[])
 
     _set_options(argc, argv);
     TSL_BUG_IF_FAILED(polyphase_fir_new(&pfir, nr_filter_coeffs, filter_coeffs, interpolate, decimate));
-    TSL_BUG_IF_FAILED(pager_flex_new(&flex, pager_freq, _on_flex_alnum_msg, _on_flex_num_msg));
+    TSL_BUG_IF_FAILED(pager_flex_new(&flex, pager_freq, _on_flex_alnum_msg, _on_flex_num_msg, _on_flex_siv_msg));
 
     DEP_MSG(SEV_INFO, "STARTING", "Starting pager message decoder on frequency %u Hz.", pager_freq);
 

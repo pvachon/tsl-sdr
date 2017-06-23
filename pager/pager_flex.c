@@ -881,15 +881,12 @@ done:
     return ret;
 }
 
-#define PAGER_FLEX_SIV_TEMP_ADDRESS_ACTIVATION              0x0
-#define PAGER_FLEX_SIV_SYSTEM_EVENT                         0x1
-#define PAGER_FLEX_SIV_RESERVED_TEST                        0x3
-
 static
 aresult_t _pager_flex_decode_short_instruction_vec(struct pager_flex *flex, uint8_t phase, uint64_t capcode, uint32_t vec_word)
 {
     aresult_t ret = A_OK;
 
+    struct pager_flex_coding *coding = NULL;
     unsigned siv_type = 0,
              siv_data = 0;
 
@@ -902,15 +899,16 @@ aresult_t _pager_flex_decode_short_instruction_vec(struct pager_flex *flex, uint
         goto done;
     }
 
+    coding = flex->sync.coding;
+
     /* Middle 3 bits represent the instruction type */
-    siv_type = (vec_word << 7) & 0x7;
+    siv_type = (vec_word >> 7) & 0x7;
 
     /* Mask out the top 11 bits for instruction data */
-    siv_data = (vec_word << 11) & 0x7ff;
+    siv_data = (vec_word >> 10) & 0x7ff;
 
     switch (siv_type) {
     case PAGER_FLEX_SIV_TEMP_ADDRESS_ACTIVATION:
-        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9zu] Temporary Address Activation (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
         break;
     case PAGER_FLEX_SIV_SYSTEM_EVENT:
         PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9zu] System Event (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
@@ -920,6 +918,11 @@ aresult_t _pager_flex_decode_short_instruction_vec(struct pager_flex *flex, uint
         break;
     default:
         PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9zu] Unknown SIV %u (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode,
+                siv_type, siv_data);
+    }
+
+    if (NULL != flex->on_siv_msg) {
+        flex->on_siv_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id, capcode,
                 siv_type, siv_data);
     }
 
@@ -1088,6 +1091,12 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
 
     if (0 != biw_eob) {
         /* TODO: walk any additional Block Information Words */
+        PAG_MSG(SEV_INFO, "BLOCK", "%02u/%02u/%c BIW end of block = %u",
+                flex->cycle_id, flex->frame_id, phase_id + 'A', biw_eob);
+        for (size_t i = 1; i < biw_eob; i++) {
+            uint32_t add_biw = phs->phase_words[i];
+            PAG_MSG(SEV_INFO, "BLOCK", "Word %zu: %u", i, add_biw);
+        }
     }
 
     addr_start += biw_eob;
@@ -1276,7 +1285,7 @@ bool _pager_flex_handle_fiw(struct pager_flex *flex)
 }
 
 aresult_t pager_flex_new(struct pager_flex **pflex, uint32_t freq_hz, pager_flex_on_alnum_msg_func_t on_aln_msg,
-        pager_flex_on_num_msg_func_t on_num_msg)
+        pager_flex_on_num_msg_func_t on_num_msg, pager_flex_on_siv_msg_func_t on_siv_msg)
 {
     aresult_t ret = A_OK;
 
@@ -1297,6 +1306,7 @@ aresult_t pager_flex_new(struct pager_flex **pflex, uint32_t freq_hz, pager_flex
     flex->freq_hz = freq_hz;
     flex->on_alnum_msg = on_aln_msg;
     flex->on_num_msg = on_num_msg;
+    flex->on_siv_msg = on_siv_msg;
 
     _pager_flex_reset_sync(flex);
 

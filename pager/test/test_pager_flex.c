@@ -50,7 +50,7 @@ TEST_DECLARE_UNIT(test_smoke, flex)
 {
     struct pager_flex *flex = NULL;
 
-    TEST_ASSERT_OK(pager_flex_new(&flex, 929612500ul, _test_flex_on_message_simple_cb, _test_flex_on_num_message_simple_cb));
+    TEST_ASSERT_OK(pager_flex_new(&flex, 929612500ul, _test_flex_on_message_simple_cb, _test_flex_on_num_message_simple_cb, NULL));
     TEST_ASSERT_OK(pager_flex_delete(&flex));
 
     return A_OK;
