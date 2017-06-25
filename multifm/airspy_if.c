@@ -63,7 +63,7 @@ int _airspy_on_sample_block(struct airspy_device *dev, void *ctx, airspy_transfe
     DIAG("Received %u samples", transfer->sample_count);
 
     /* TODO: for now, just memcpy to the output */
-    memcpy(sbuf->data_buf, transfer->samples, transfer->sample_count * sizeof(int16_t));
+    memcpy(sbuf->data_buf, transfer->samples, transfer->sample_count * sizeof(int16_t) * 2);
     sbuf->nr_samples = transfer->sample_count;
 
     /* Something has gone very wrong... */
@@ -151,7 +151,7 @@ aresult_t airspy_worker_thread_new(struct receiver **pthr, struct config *cfg)
     }
 
     /* Get the VGA gain from the device config */
-    if (FAILED(config_get_integer(&device, &lna_gain, "vgaGain"))) {
+    if (FAILED(config_get_integer(&device, &vga_gain, "vgaGain"))) {
         vga_gain = 5;
     }
 
