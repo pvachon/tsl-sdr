@@ -48,9 +48,18 @@ later file will be taken.
 
 This section describes the configuration keys for MultiFM. These parameters are all mandatory.
 
- * `deviceIndex` (integer): The index of the RTL-SDR device to use. If you have only one device,
+ * `device` (object): A device configuration stanza. Specifies how samples will get to MultiFM.
+   * `type` (string): The device type. This will be either `rtlsdr` or `airspy`.
+   * `deviceIndex` (integer): The index of the RTL-SDR device to use. If you have only one device,
    this will be 0.
- * `dbGain` (float): The gain value, in decibels. Valid values are printed on startup of the app.
+   * `dbGainLNA` (float): The front-end LNA gain for an RTL-SDR (almost all tuners)
+   * `dbGainIF` (float): The front-end LNA gain for an RTL-SDR with the Elonics E4000 tuner
+   * `ppmCorrection` (integer): The PPM correction coefficient to be applied to the oscillator in the
+	   RTL-SDR.
+   * `iqDumpFile` (integer): A file to dump the raw, unprocessed samples to, before processing them.
+     Use this for debugging only.
+   * `sdrTestMode` (boolean): Specify whether or not the SDR should be put in counter test mode. Not
+		 useful unless you know exactly what this does.
  * `sampleRateHz` (integer): The sample rate, in hertz. This is the "broadband" bandwidth of the SDR.
  * `centerFreqHz` (integer): The center frequency to tune to. This controls the tuner front end.
  * `nrSampBufs` (integer): A tunable number of sample buffers. Usually this needs to be no more than 16.

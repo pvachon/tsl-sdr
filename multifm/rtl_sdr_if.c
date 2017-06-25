@@ -22,23 +22,19 @@
 
 #include <multifm/rtl_sdr_if.h>
 #include <multifm/multifm.h>
-#include <multifm/demod.h>
 
 #include <filter/sample_buf.h>
 
 #include <config/engine.h>
 
-#include <tsl/list.h>
-#include <tsl/worker_thread.h>
 #include <tsl/assert.h>
 #include <tsl/errors.h>
 #include <tsl/diag.h>
-#include <tsl/assert.h>
 
-#include <stdatomic.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 
 #ifdef _USE_ARM_NEON
 #include <arm_neon.h>
@@ -60,10 +56,6 @@ aresult_t _rtl_sdr_worker_thread_delete(struct receiver *rx)
 
     thr = BL_CONTAINER_OF(rx, struct rtl_sdr_thread, rx);
 
-    if (NULL == thr) {
-        goto done;
-    }
-
     TSL_BUG_ON(0 != rtlsdr_cancel_async(thr->dev));
 
     if (NULL != thr->dev) {
@@ -79,7 +71,6 @@ aresult_t _rtl_sdr_worker_thread_delete(struct receiver *rx)
 
     TFREE(thr);
 
-done:
     return ret;
 }
 
@@ -99,7 +90,6 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
     struct rtl_sdr_thread *thr = ctx;
     struct sample_buf *sbuf = NULL;
     int16_t *sbuf_ptr = NULL;
-    struct demod_thread *dthr = NULL;
 
     if (true == thr->rx.muted) {
         DIAG("Worker is muted.");
@@ -159,18 +149,8 @@ void __rtl_sdr_worker_read_async_cb(unsigned char *buf, uint32_t len, void *ctx)
 #endif
 
     sbuf->nr_samples = len / 2;
-    atomic_store(&sbuf->refcount, thr->rx.nr_demod_threads);
 
-    /* TODO: Apply the DC filter.. maybe */
-
-    /* Make it available to each demodulator/processing thread */
-    list_for_each_type(dthr, &thr->rx.demod_threads, dt_node) {
-        pthread_mutex_lock(&dthr->wq_mtx);
-        TSL_BUG_IF_FAILED(work_queue_push(&dthr->wq, sbuf));
-        pthread_mutex_unlock(&dthr->wq_mtx);
-        /* Signal there is data ready, if the thread is waiting on the condvar */
-        pthread_cond_signal(&dthr->wq_cv);
-    }
+    TSL_BUG_IF_FAILED(receiver_sample_buf_deliver(&thr->rx, sbuf));
 
 done:
     return;

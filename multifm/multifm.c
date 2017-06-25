@@ -22,7 +22,15 @@
  */
 
 #include <multifm/multifm.h>
+#if HAVE_RTLSDR
 #include <multifm/rtl_sdr_if.h>
+#include <rtl-sdr.h>
+#endif /* HAVE_RTLSDR */
+
+#if HAVE_DESPAIRSPY
+#include <multifm/airspy_if.h>
+#endif
+
 #include <multifm/receiver.h>
 
 #include <filter/sample_buf.h>
@@ -39,8 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <rtl-sdr.h>
-
+#if HAVE_RTLSDR
 static
 void _do_dump_rtl_sdr_devices(void)
 {
@@ -61,12 +68,15 @@ void _do_dump_rtl_sdr_devices(void)
 done:
     return;
 }
+#endif
 
 static
 void _usage(const char *name)
 {
     fprintf(stderr, "usage: %s [Config File 1]{, Config File 2, ...} | %s -h\n", name, name);
+#if HAVE_RTLSDR
     _do_dump_rtl_sdr_devices();
+#endif
 }
 
 int main(int argc, const char *argv[])
@@ -110,7 +120,19 @@ int main(int argc, const char *argv[])
 
     /* Prepare the RTL-SDR thread and demod threads */
     if (!strncmp(dev_type, "rtlsdr", 6)) {
+#if HAVE_RTLSDR
         TSL_BUG_IF_FAILED(rtl_sdr_worker_thread_new(&rx_thr, cfg));
+#else
+        MFM_MSG(SEV_FATAL, "RTLSDR-NOT-SUPPORTED", "RTL-SDR devices are not supported by this build.");
+        goto done;
+#endif
+    } else if (!strncmp(dev_type, "airspy", 6)) {
+#if HAVE_DESPAIRSPY
+        TSL_BUG_IF_FAILED(airspy_worker_thread_new(&rx_thr, cfg));
+#else
+        MFM_MSG(SEV_FATAL, "AIRSPY-NOT-SUPPORTED", "Airspy devices are not supported by this build.");
+        goto done;
+#endif
     } else {
         MFM_MSG(SEV_FATAL, "UNKNOWN-DEV-TYPE", "Unknown device type: '%s'", dev_type);
         goto done;

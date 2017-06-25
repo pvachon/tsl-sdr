@@ -99,3 +99,11 @@ aresult_t receiver_sample_buf_alloc(struct receiver *rx, struct sample_buf **pbu
  */
 aresult_t receiver_set_mute(struct receiver *rx, bool mute);
 
+/**
+ * Deliver a filled sample buffer to the receiver's listeners.
+ *
+ * \param rx The receiver state
+ * \param buf The buffer of samples to be delivered.
+ */
+aresult_t receiver_sample_buf_deliver(struct receiver *rx, struct sample_buf *buf);
+
