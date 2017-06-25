@@ -1,9 +1,9 @@
 {
   "device" : {
     "type" : "airspy",
-    "lnaGain" : 10,
-    "vgaGain" : 5,
-    "mixerGain" : 5
+    "lnaGain" : 13,
+    "vgaGain" : 8,
+    "mixerGain" : 8
   },
   "sampleRateHz" : 3000000,
   "centerFreqHz" : 930500000,
