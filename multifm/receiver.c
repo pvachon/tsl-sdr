@@ -69,6 +69,29 @@ done:
     return ret;
 }
 
+/**
+ * Deliver a sample buffer to any waiting consumers
+ */
+aresult_t receiver_sample_buf_deliver(struct receiver *rx, struct sample_buf *buf)
+{
+    aresult_t ret = A_OK;
+
+    struct demod_thread *dthr = NULL;
+
+    atomic_store(&buf->refcount, rx->nr_demod_threads);
+
+    /* Make it available to each demodulator/processing thread */
+    list_for_each_type(dthr, &rx->demod_threads, dt_node) {
+        pthread_mutex_lock(&dthr->wq_mtx);
+        TSL_BUG_IF_FAILED(work_queue_push(&dthr->wq, buf));
+        pthread_mutex_unlock(&dthr->wq_mtx);
+        /* Signal there is data ready, if the thread is waiting on the condvar */
+        pthread_cond_signal(&dthr->wq_cv);
+    }
+
+    return ret;
+}
+
 aresult_t receiver_init(struct receiver *rx, struct config *cfg,
         receiver_rx_thread_func_t rx_func, receiver_cleanup_func_t cleanup_func,
         size_t samples_per_buf)
