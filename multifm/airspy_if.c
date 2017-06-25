@@ -122,7 +122,8 @@ aresult_t airspy_worker_thread_new(struct receiver **pthr, struct config *cfg)
         ser_no = -1,
         lna_gain = 1,
         vga_gain = 5,
-        mixer_gain = 5;
+        mixer_gain = 5,
+        airspy_ret = 0;
     bool bias_t = false;
     struct config device = CONFIG_INIT_EMPTY;
 
@@ -174,14 +175,14 @@ aresult_t airspy_worker_thread_new(struct receiver **pthr, struct config *cfg)
 
     /* Open the device */
     if (-1 != ser_no) {
-        if (0 != airspy_open_sn(&dev, ser_no)) {
+        if (0 != (airspy_ret = airspy_open_sn(&dev, ser_no))) {
             MFM_MSG(SEV_FATAL, "BAD-DEVICE", "Unable to find Airspy device with ID %d", ser_no);
             ret = A_E_INVAL;
             goto done;
         }
     } else {
-        if (0 != airspy_open(&dev)) {
-            MFM_MSG(SEV_FATAL, "BAD-DEVICE", "Unable to find any Airspy devices.");
+        if (0 != (airspy_ret = airspy_open(&dev))) {
+            MFM_MSG(SEV_FATAL, "NO-DEVICE", "Unable to find any Airspy devices.");
             ret = A_E_INVAL;
             goto done;
         }
@@ -222,6 +223,11 @@ aresult_t airspy_worker_thread_new(struct receiver **pthr, struct config *cfg)
         MFM_MSG(SEV_FATAL, "BAD-MIXER-GAIN", "Mixer gain value of %d dB is invalid, aborting", mixer_gain);
         ret = A_E_INVAL;
         goto done;
+    }
+
+    /* Enable the Bias Tee if we were asked to do so */
+    if (0 != airspy_set_rf_bias(dev, (true == bias_t) ? 1 : 0)) {
+        MFM_MSG(SEV_WARNING, "FAILED-ENABLE-BIAS", "Failed to enable Bias Tee for powering an outside device.");
     }
 
     /* Create the device object */
