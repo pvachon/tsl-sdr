@@ -46,6 +46,7 @@
 
 #include <stdlib.h>
 #include <complex.h>
+#include <string.h>
 
 #if HAVE_RTLSDR
 static

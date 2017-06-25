@@ -12,6 +12,8 @@
 
 #include <libdespairspy/airspy.h>
 
+#include <string.h>
+
 static
 aresult_t _airspy_worker_thread_delete(struct receiver *rx)
 {

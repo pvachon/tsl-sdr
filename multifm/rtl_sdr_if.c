@@ -34,6 +34,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 
 #ifdef _USE_ARM_NEON
 #include <arm_neon.h>
