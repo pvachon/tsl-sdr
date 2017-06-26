@@ -170,7 +170,9 @@ aresult_t airspy_worker_thread_new(struct receiver **pthr, struct config *cfg)
     if (FAILED(config_get_boolean(&device, &bias_t, "enableBiasTee"))) {
         bias_t = false;
     } else {
-        MFM_MSG(SEV_INFO, "BIAS-TEE", "Bias Tee is enabled, so hope you have something attached.");
+        if (true == bias_t) {
+            MFM_MSG(SEV_INFO, "BIAS-TEE", "Bias Tee is enabled, so hope you have something attached.");
+        }
     }
 
     /* Open the device */
