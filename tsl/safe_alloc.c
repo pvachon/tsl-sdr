@@ -146,6 +146,16 @@ void free_u32_array(uint32_t **ptr)
     TFREE(*ptr);
 }
 
+void free_i16_array(int16_t **ptr)
+{
+    TFREE(*ptr);
+}
+
+void free_double_array(double **ptr)
+{
+    TFREE(*ptr);
+}
+
 void free_memory(void **ptr)
 {
     TFREE(*ptr);

@@ -99,7 +99,7 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
     aresult_t ret = A_OK;
 
     double *lpf_taps = NULL,
-           *resample_filter_taps = NULL;
+           *resample_filter_taps CAL_CLEANUP(free_double_array) = NULL;
     double dc_block_pole = 0.9999;
 
     size_t lpf_nr_taps = 0,
@@ -112,6 +112,7 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
         sample_rate = 0,
         center_freq = 0;
     bool enable_dc_block = false;
+    int16_t *resample_int_filter_taps CAL_CLEANUP(free_i16_array) = NULL;
 
     struct config rational_resampler,
                   channels,
@@ -209,7 +210,7 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
             goto done;
         }
 
-        if (FAILED(ret = config_get_float_array(&rational_resampler, &resample_filter_taps, &nr_resample_filter_taps, "filterCoefficients"))) {
+        if (FAILED(ret = config_get_float_array(&rational_resampler, &resample_filter_taps, &nr_resample_filter_taps, "lpfCoeffs"))) {
             MFM_MSG(SEV_ERROR, "MISSING-RESAMPLE-FILTER-COEFF", "Missing filter coefficients for the resampling filter.");
             goto done;
         }
@@ -219,6 +220,15 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
             MFM_MSG(SEV_ERROR, "NO-RESAMPLE-TAPS", "Rational resampler filter taps must not be empty or there must be enough taps to perform an interpolation.");
             goto done;
         }
+
+        TSL_BUG_IF_FAILED(TCALLOC((void **)&resample_int_filter_taps, sizeof(int16_t), nr_resample_filter_taps));
+
+        for (size_t i = 0; i < nr_resample_filter_taps; i++) {
+            double q15 = 1 << Q_15_SHIFT;
+            resample_int_filter_taps[i] = resample_filter_taps[i] * q15;
+        }
+
+        TFREE(resample_filter_taps);
 
         MFM_MSG(SEV_INFO, "RATIONAL-RESAMPLER", "Using Rational Resampler with to resample the output rate to %d/%d with %zu taps in filter.",
                 resample_interpolate, resample_decimate, nr_resample_filter_taps);
@@ -277,7 +287,7 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
         /* Create demodulator thread object */
         if (FAILED(ret = demod_thread_new(&dmt, -1, (int32_t)nb_center_freq - center_freq,
                         sample_rate, fifo_name, decimation_factor, lpf_taps, lpf_nr_taps,
-                        resample_decimate, resample_interpolate, resample_filter_taps,
+                        resample_decimate, resample_interpolate, resample_int_filter_taps,
                         nr_resample_filter_taps,
                         signal_debug,
                         dc_block_pole, enable_dc_block,

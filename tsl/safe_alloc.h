@@ -55,6 +55,8 @@
 
 /* CAL_CLEANUP helpers */
 void free_u32_array(uint32_t **ptr);
+void free_i16_array(int16_t **ptr);
+void free_double_array(double **ptr);
 void free_memory(void **ptr);
 void free_string(char **str);
 
