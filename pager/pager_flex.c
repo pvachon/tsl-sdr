@@ -81,18 +81,6 @@ struct pager_flex_coding _pager_codings[] = {
         .nr_phases = 2,
     },
     {
-        .seq_a = 0x6341,
-        .baud = 3200,
-        .fsk_levels = 4,
-        .sample_skip = 9,
-        .sync_2_samples = 12,
-        .sym_bits = 2,
-        .slice = _pager_flex_slice_4fsk,
-        .sample_fudge = 0,
-        .symbols_per_block = 2816,
-        .nr_phases = 2,
-    },
-    {
         .seq_a = 0x215f,
         .baud = 6400,
         .fsk_levels = 4,
@@ -104,20 +92,6 @@ struct pager_flex_coding _pager_codings[] = {
         .symbols_per_block = 5632,
         .nr_phases = 4,
     },
-#if 0
-    {
-        .seq_a = 0x6341,
-        .baud = 6400,
-        .fsk_levels = 4,
-        .sample_skip = 4,
-        .sync_2_samples = 32,
-        .sym_bits = 2,
-        .slice = _pager_flex_slice_4fsk,
-        .sample_fudge = 2,
-        .symbols_per_block = 5632,
-        .nr_phases = 4,
-    },
-#endif
 };
 
 /**
