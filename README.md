@@ -180,4 +180,4 @@ works best for you.
 
 # Author
 
-Most of this code was written by Phil Vachon (phil@security-embdedded.com).
+Most of this code was written by Phil Vachon (phil@security-embedded.com).

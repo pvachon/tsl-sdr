@@ -104,7 +104,7 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
             float f_im = s_im,
                   f_re = s_re;
             /* Find phase angle of normalized cartesian coordinates */
-            float phi = fast_atan2f(f_im/q15, f_re/q15);
+            float phi = fast_atan2f(f_im, f_re);
 
             /* Scale by pi (since atan2 returns an angle in (-pi,pi]), convert back to Q.15 */
             float phi_scaled = phi/M_PI * q15;
@@ -117,10 +117,15 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
             dthr->last_fm_im = a_im;
         }
 
-        /* TODO: Apply the polyphase resampler, if we're asked */
-
         if (true == dthr->block_dc) {
             TSL_BUG_IF_FAILED(dc_blocker_apply(&dthr->dc_blk, dthr->pcm_out_buf, dthr->nr_pcm_samples));
+        }
+
+        /* Apply the polyphase resampler, if we're asked */
+        if (NULL != dthr->pfir) {
+            /* Allocate a bounce buffer for the output */
+
+            /* Resample using the polyphase resampler */
         }
 
         /* x. Write out the resulting PCM samples */
@@ -201,7 +206,10 @@ aresult_t demod_thread_delete(struct demod_thread **pthr)
         thr->fifo_fd = -1;
     }
 
-    direct_fir_cleanup(&thr->fir);
+    TSL_BUG_IF_FAILED(direct_fir_cleanup(&thr->fir));
+    if (NULL != thr->pfir) {
+        TSL_BUG_IF_FAILED(polyphase_fir_delete(&thr->pfir));
+    }
 
     TFREE(thr);
 
@@ -292,7 +300,7 @@ done:
 aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
         const double *lpf_taps, size_t lpf_nr_taps,
-        unsigned resample_decimate, unsigned resample_interpolate, const double *resample_filter_taps,
+        unsigned resample_decimate, unsigned resample_interpolate, const int16_t *resample_filter_taps,
         size_t nr_resample_filter_taps,
         const char *fir_debug_output,
         double dc_block_pole, bool enable_dc_block,
@@ -353,6 +361,11 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
     }
 
     /* TODO If applicable, initialize the polyphase rational resampler */
+    if (0 != nr_resample_filter_taps) {
+        TSL_BUG_ON(NULL == resample_filter_taps);
+        TSL_BUG_IF_FAILED(polyphase_fir_new(&thr->pfir, nr_resample_filter_taps, resample_filter_taps,
+                    resample_interpolate, resample_decimate));
+    }
 
     /* Open the debug output file, if applicable */
     if (NULL != fir_debug_output && '\0' != *fir_debug_output) {
@@ -382,6 +395,10 @@ done:
             if (-1 != thr->fifo_fd) {
                 close(thr->fifo_fd);
                 thr->fifo_fd = -1;
+            }
+
+            if (NULL != thr->pfir) {
+                TSL_BUG_IF_FAILED(polyphase_fir_delete(&thr->pfir));
             }
 
             TSL_BUG_IF_FAILED(direct_fir_cleanup(&thr->fir));

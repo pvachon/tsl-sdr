@@ -51,7 +51,7 @@ def main(argv):
     decimation = int(argv[2])
     fractional_bw = float(argv[3])
 
-    print(json.dumps({'interpolate': interpolation, 'decimate': decimation, 'fractionalBw': fractional_bw, 'lpfCoeffs': design_filter(interpolation, decimation, fractional_bw)}))
+    print(json.dumps({'rationalResampler': {'interpolate': interpolation, 'decimate': decimation, 'fractionalBw': fractional_bw, 'lpfCoeffs': design_filter(interpolation, decimation, fractional_bw)}}))
 
 if __name__ == '__main__':
     main(sys.argv)

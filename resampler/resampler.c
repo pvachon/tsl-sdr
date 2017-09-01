@@ -84,6 +84,7 @@ void _set_options(int argc, char * const argv[])
     int arg = -1;
     const char *filter_file = NULL;
     struct config *cfg CAL_CLEANUP(config_delete) = NULL;
+    struct config resamp_cfg = CONFIG_INIT_EMPTY;
     double *filter_coeffs_f = NULL;
 
     while ((arg = getopt(argc, argv, "I:D:S:F:bh")) != -1) {
@@ -142,7 +143,9 @@ void _set_options(int argc, char * const argv[])
         exit(EXIT_FAILURE);
     }
 
-    TSL_BUG_IF_FAILED(config_get_float_array(cfg, &filter_coeffs_f, &nr_filter_coeffs, "lpfCoeffs"));
+    TSL_BUG_IF_FAILED(config_get(cfg, &resamp_cfg, "rationalResampler"));
+
+    TSL_BUG_IF_FAILED(config_get_float_array(&resamp_cfg, &filter_coeffs_f, &nr_filter_coeffs, "lpfCoeffs"));
     TSL_BUG_IF_FAILED(TCALLOC((void **)&filter_coeffs, sizeof(int16_t) * nr_filter_coeffs, (size_t)1));
 
     for (size_t i = 0; i < nr_filter_coeffs; i++) {
@@ -150,13 +153,13 @@ void _set_options(int argc, char * const argv[])
         filter_coeffs[i] = (int16_t)(filter_coeffs_f[i] * q15);
     }
 
-    if (0 > (in_fifo = open(argv[optind], O_RDONLY))) {
-        RES_MSG(SEV_INFO, "BAD-INPUT", "Bad input - cannot open %s", argv[optind]);
+    if (0 > (out_fifo = open(argv[optind + 1], O_WRONLY))) {
+        RES_MSG(SEV_INFO, "BAD-OUTPUT", "Bad output - cannot open %s", argv[optind + 1]);
         exit(EXIT_FAILURE);
     }
 
-    if (0 > (out_fifo = open(argv[optind + 1], O_WRONLY))) {
-        RES_MSG(SEV_INFO, "BAD-OUTPUT", "Bad output - cannot open %s", argv[optind + 1]);
+    if (0 > (in_fifo = open(argv[optind], O_RDONLY))) {
+        RES_MSG(SEV_INFO, "BAD-INPUT", "Bad input - cannot open %s", argv[optind]);
         exit(EXIT_FAILURE);
     }
 }
