@@ -124,7 +124,7 @@ int __tx_thread_tx(hackrf_transfer *tx)
 }
 
 static
-aresult_t __tx_thread_work(struct worker_thread *wthr)
+aresult_t _tx_thread_work(struct worker_thread *wthr)
 {
     aresult_t ret = A_OK;
 
@@ -152,7 +152,7 @@ aresult_t tx_thread_start(struct tx_thread *thr)
     TSL_ASSERT_ARG(NULL != thr);
 
     /* Create the transmit worker thread */
-    if (FAILED(ret = worker_thread_new(&thr->thr, __tx_thread_work, WORKER_THREAD_CPU_MASK_ANY))) {
+    if (FAILED(ret = worker_thread_new(&thr->thr, _tx_thread_work, WORKER_THREAD_CPU_MASK_ANY))) {
         goto done;
     }
 
