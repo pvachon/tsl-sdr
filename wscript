@@ -56,11 +56,11 @@ def options(opt):
 def configure(conf):
 	_loadTools(conf)
 
-	conf.check(lib='rtlsdr', uselib='RTLSDR', define_name='HAVE_RTLSDR')
+	conf.check(lib='rtlsdr', uselib='RTLSDR', define_name='HAVE_RTLSDR', msg='Checking for RTL-SDR libraries')
 	conf.check(lib='ck', uselib='CK', define_name='HAVE_CONCURRENCYKIT', msg='Checking for ConcurrencyKit')
 	conf.check(lib='jansson', uselib='JANSSON', define_name='HAVE_JANSSON', msg='Checking for Jansson (JSON library)')
 	conf.check(lib='despairspy', uselib='DESPAIRSPY', define_name='HAVE_DESPAIRSPY', msg='Checking for DespAirspy');
-
+	conf.check_cfg(package='libhackrf', uselib_store='HACKRF', define_name='HAVE_HACKRF', args=['--cflags', '--libs'], msg='Checking for HackRF');
 
 	#Setup build flags
 	conf.env.CFLAGS += [
@@ -333,6 +333,14 @@ def build(bld):
 		use      = ['pager', 'config', 'test', 'tsl'],
 		target   = os.path.join(testPath, 'test_pager'),
 		name     = 'test_pager',
+	)
+
+	# Flexmitter
+	bld.program(
+		source	= bld.path.ant_glob('flexmitter/*.c'),
+		use		= ['app', 'config', 'tsl', 'HACKRF'],
+		target	= os.path.join(binPath, 'flexmitter'),
+		name	= 'flexmitter',
 	)
 
 	#test
