@@ -1094,8 +1094,19 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
         PAG_MSG(SEV_INFO, "BLOCK", "%02u/%02u/%c BIW end of block = %u",
                 flex->cycle_id, flex->frame_id, phase_id + 'A', biw_eob);
         for (size_t i = 1; i < biw_eob; i++) {
-            uint32_t add_biw = phs->phase_words[i];
-            PAG_MSG(SEV_INFO, "BLOCK", "Word %zu: %u", i, add_biw);
+            uint32_t add_biw = phs->phase_words[i] & 0x7ffffffful;
+            if (0 == bch_code_decode(flex->bch, &add_biw)) {
+                add_biw &= 0x1fffff;
+                /* Perform Checksum */
+                if (0xf != __pager_flex_calc_word_checksum(add_biw)) {
+                    PAG_MSG(SEV_INFO, "BLOCK", "Additional BIW %zu failed checksumming.", i);
+                } else {
+                    uint32_t function = (add_biw >> 4) & 0x7;
+                    PAG_MSG(SEV_INFO, "BLOCK", "Word %zu, function %u: %u", i, function, add_biw);
+                }
+            } else {
+                PAG_MSG(SEV_INFO, "BLOCK", "Additional BIW %zu could not be corrected.", i);
+            }
         }
     }
 
