@@ -563,7 +563,7 @@ aresult_t _pager_flex_decode_address(struct pager_flex *flex, uint32_t *addr, ui
         /* Calculate the second address, per the Binary -> CAPCODE decoding scheme */
         addr_second = addr[1] &= 0x1fffff;
         *pnr_words = 1;
-        *pcapcode = (((0x1fffffull - (uint64_t)addr_second) << 15) + 0x1f9000) + addr_first;
+        *pcapcode = 0x1f9001 + (((0x1fffff - addr_second) * 32768) + addr_first - 1);
         /* TODO: this only covers 1-2 type long capcodes */
     }
 
