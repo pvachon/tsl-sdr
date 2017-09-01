@@ -1031,6 +1031,59 @@ done:
     return ret;
 }
 
+#define PAGER_FLEX_BIW_LOCAL_IDS            0
+#define PAGER_FLEX_BIW_DATE                 1
+#define PAGER_FLEX_BIW_TIME                 2
+#define PAGER_FLEX_BIW_SYSTEM_INFO          5
+#define PAGER_FLEX_BIW_COUNTRY              7
+
+static
+void __pager_flex_decode_extra_biw(struct pager_flex *flex, uint32_t biw)
+{
+    uint32_t add_biw = biw & 0x7ffffffful;
+
+    TSL_BUG_ON(NULL == flex);
+
+    if (0 == bch_code_decode(flex->bch, &add_biw)) {
+        add_biw &= 0x1fffff;
+        /* Perform Checksum */
+        if (0xf != __pager_flex_calc_word_checksum(add_biw)) {
+            PAG_MSG(SEV_INFO, "BLOCK", "Additional BIW failed checksumming.");
+        } else {
+            uint32_t function = (add_biw >> 4) & 0x7;
+            switch (function) {
+            case PAGER_FLEX_BIW_LOCAL_IDS:
+                PAG_MSG(SEV_INFO, "BLOCK-LOCAL-IDS", "SSID word");
+                break;
+            case PAGER_FLEX_BIW_DATE: {
+                unsigned year =  ((add_biw >> (7 + 9)) & 0x1f) + 1994,
+                         month = ((add_biw >> (7 + 4)) & 0x1f) + 1,
+                         day =   ((add_biw >> 7)       & 0xf);
+                PAG_MSG(SEV_INFO, "BLOCK-DATE", "%02u-%02u-%u", year, month, day);
+                break;
+            }
+            case PAGER_FLEX_BIW_TIME: {
+                unsigned hour = (add_biw >> (7 + 9)) & 0x1f,
+                         minute = (add_biw >> (7 + 3)) & 0x3f,
+                         second = ((add_biw >> 7) & 0x7) << 3;
+                PAG_MSG(SEV_INFO, "BLOCK-TIME", "%02u:%02u:%02u", hour, minute, second);
+                break;
+            }
+            case PAGER_FLEX_BIW_SYSTEM_INFO:
+                PAG_MSG(SEV_INFO, "BLOCK-SYS-INFO", "System Information Field");
+                break;
+            case PAGER_FLEX_BIW_COUNTRY:
+                PAG_MSG(SEV_INFO, "BLOCK-SYS-COUNTRY", "Country Information");
+                break;
+            default:
+                PAG_MSG(SEV_INFO, "BLOCK", "Unknown function %u.", function);
+            }
+        }
+    } else {
+        PAG_MSG(SEV_INFO, "BLOCK", "Additional BIW could not be corrected.");
+    }
+}
+
 static
 void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
 {
@@ -1094,19 +1147,7 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
         PAG_MSG(SEV_INFO, "BLOCK", "%02u/%02u/%c BIW end of block = %u",
                 flex->cycle_id, flex->frame_id, phase_id + 'A', biw_eob);
         for (size_t i = 1; i < biw_eob; i++) {
-            uint32_t add_biw = phs->phase_words[i] & 0x7ffffffful;
-            if (0 == bch_code_decode(flex->bch, &add_biw)) {
-                add_biw &= 0x1fffff;
-                /* Perform Checksum */
-                if (0xf != __pager_flex_calc_word_checksum(add_biw)) {
-                    PAG_MSG(SEV_INFO, "BLOCK", "Additional BIW %zu failed checksumming.", i);
-                } else {
-                    uint32_t function = (add_biw >> 4) & 0x7;
-                    PAG_MSG(SEV_INFO, "BLOCK", "Word %zu, function %u: %u", i, function, add_biw);
-                }
-            } else {
-                PAG_MSG(SEV_INFO, "BLOCK", "Additional BIW %zu could not be corrected.", i);
-            }
+            __pager_flex_decode_extra_biw(flex, phs->phase_words[i]);
         }
     }
 
