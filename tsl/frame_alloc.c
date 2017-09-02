@@ -43,7 +43,7 @@
 
 #define _FRAME_ALLOC_COUNTS
 
-#if defined(__x86_64__) || defined(__ARM_ARCH_ISA_A64)
+#if defined(__x86_64__) || defined(__ARM_ARCH_ISA_A64) || defined(__aarch64__)
 typedef uint64_t counter_t;
 #elif defined(__ARM_ARCH)
 typedef uint32_t counter_t;
