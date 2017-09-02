@@ -56,10 +56,10 @@ def options(opt):
 def configure(conf):
 	_loadTools(conf)
 
-	conf.check(lib='rtlsdr', uselib='RTLSDR', define_name='HAVE_RTLSDR')
+	conf.check(lib='rtlsdr', uselib='RTLSDR', define_name='HAVE_RTLSDR', msg='Checking for RTL-SDR library', mandatory=False)
 	conf.check(lib='ck', uselib='CK', define_name='HAVE_CONCURRENCYKIT', msg='Checking for ConcurrencyKit')
 	conf.check(lib='jansson', uselib='JANSSON', define_name='HAVE_JANSSON', msg='Checking for Jansson (JSON library)')
-	conf.check(lib='despairspy', uselib='DESPAIRSPY', define_name='HAVE_DESPAIRSPY', msg='Checking for DespAirspy');
+	conf.check(lib='despairspy', uselib='DESPAIRSPY', define_name='HAVE_DESPAIRSPY', msg='Checking for DespAirspy', mandatory=False);
 
 
 	#Setup build flags
