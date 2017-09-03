@@ -4,7 +4,7 @@
 #include <tsl/list.h>
 #include <tsl/worker_thread.h>
 
-#include <filter/direct_fir.h>
+#include <filter/polyphase_cfir.h>
 #include <filter/dc_blocker.h>
 
 #include <pthread.h>
@@ -25,12 +25,7 @@ struct demod_thread {
     /**
      * The FIR filter being applied by this thread (usually for baseband selection)
      */
-    struct direct_fir fir;
-
-    /**
-     * An optional polyphase resampler.
-     */
-    struct polyphase_fir *pfir;
+    struct polyphase_cfir *fir;
 
     /**
      * State for the DC blocker. Not used if DC blocker is disabled.

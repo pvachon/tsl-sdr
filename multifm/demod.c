@@ -23,9 +23,8 @@
 #include <multifm/demod.h>
 #include <multifm/multifm.h>
 
-#include <filter/direct_fir.h>
 #include <filter/sample_buf.h>
-#include <filter/polyphase_fir.h>
+#include <filter/polyphase_cfir.h>
 #include <filter/complex.h>
 
 #include <tsl/frame_alloc.h>
@@ -55,8 +54,8 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
     TSL_ASSERT_ARG(NULL != dthr);
     TSL_ASSERT_ARG(NULL != sbuf);
 
-    TSL_BUG_IF_FAILED(direct_fir_push_sample_buf(&dthr->fir, sbuf));
-    TSL_BUG_IF_FAILED(direct_fir_can_process(&dthr->fir, &can_process, NULL));
+    TSL_BUG_IF_FAILED(polyphase_cfir_push_sample_buf(dthr->fir, sbuf));
+    TSL_BUG_IF_FAILED(polyphase_cfir_can_process(dthr->fir, &can_process));
 
     TSL_BUG_ON(false == can_process);
 
@@ -66,7 +65,7 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         /* 1. Filter using FIR, decimate by the specified factor. Iterate over the output
          *    buffer samples.
          */
-        TSL_BUG_IF_FAILED(direct_fir_process(&dthr->fir, dthr->fm_samp_out_buf + dthr->nr_fm_samples,
+        TSL_BUG_IF_FAILED(polyphase_cfir_process(dthr->fir, dthr->fm_samp_out_buf + dthr->nr_fm_samples,
                     LPF_PCM_OUTPUT_LEN - dthr->nr_fm_samples, &nr_samples));
 
         dthr->total_nr_fm_samples += nr_samples;
@@ -121,13 +120,6 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
             TSL_BUG_IF_FAILED(dc_blocker_apply(&dthr->dc_blk, dthr->pcm_out_buf, dthr->nr_pcm_samples));
         }
 
-        /* Apply the polyphase resampler, if we're asked */
-        if (NULL != dthr->pfir) {
-            /* Allocate a bounce buffer for the output */
-
-            /* Resample using the polyphase resampler */
-        }
-
         /* x. Write out the resulting PCM samples */
         if (0 > write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(int16_t))) {
             int errnum = errno;
@@ -135,7 +127,7 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
                     strerror(errnum), errnum);
         }
 
-        TSL_BUG_IF_FAILED(direct_fir_can_process(&dthr->fir, &can_process, NULL));
+        TSL_BUG_IF_FAILED(polyphase_cfir_can_process(dthr->fir, &can_process));
 
         /* We're done with this batch of samples, woohoo */
         dthr->nr_fm_samples = 0;
@@ -206,10 +198,7 @@ aresult_t demod_thread_delete(struct demod_thread **pthr)
         thr->fifo_fd = -1;
     }
 
-    TSL_BUG_IF_FAILED(direct_fir_cleanup(&thr->fir));
-    if (NULL != thr->pfir) {
-        TSL_BUG_IF_FAILED(polyphase_fir_delete(&thr->pfir));
-    }
+    TSL_BUG_IF_FAILED(polyphase_cfir_delete(&thr->fir));
 
     TFREE(thr);
 
@@ -241,7 +230,6 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, const double *lpf_taps, s
     int64_t power = 0;
     double dpower = 0.0;
 #endif /* defined(_DUMP_LPF) */
-    size_t base = lpf_nr_taps;
 
     DIAG("Preparing LPF for offset %d Hz", offset_hz);
 
@@ -268,17 +256,17 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, const double *lpf_taps, s
 #endif
 
         /* Calculate the Q31 coefficient */
-        coeffs[       i] = (int16_t)(creal(lpf_tap) * q15);
-        coeffs[base + i] = (int16_t)(cimag(lpf_tap) * q15);
+        coeffs[2 * i] = (int16_t)(creal(lpf_tap) * q15);
+        coeffs[2 * i + 1] = (int16_t)(cimag(lpf_tap) * q15);
 
 #ifdef _DUMP_LPF
         ptemp = sqrt( (creal(lpf_tap) * creal(lpf_tap)) + (cimag(lpf_tap) * cimag(lpf_tap)) );
-        samp_power = sqrt( ((int64_t)coeffs[i] * (int64_t)coeffs[i]) + ((int64_t)coeffs[base + i] * (int64_t)coeffs[base + i]) );
+        samp_power = sqrt( ((int64_t)coeffs[2 * i] * (int64_t)coeffs[2 * i]) + ((int64_t)coeffs[2 * i + 1] * (int64_t)coeffs[2 * i + 1]) );
 
         power += samp_power;
         dpower += ptemp;
 
-        fprintf(stderr, "    complex(%f, %f), %% (%d, %d)\n", creal(lpf_tap), cimag(lpf_tap), coeffs[i], coeffs[base + i]);
+        fprintf(stderr, "    complex(%f, %f), %% (%d, %d)\n", creal(lpf_tap), cimag(lpf_tap), coeffs[2 * i], coeffs[2 * i + 1]);
 #endif /* defined(_DUMP_LPF) */
     }
 #ifdef _DUMP_LPF
@@ -287,7 +275,7 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, const double *lpf_taps, s
 #endif /* defined(_DUMP_LPF) */
 
     /* Create a Direct Type FIR implementation */
-    TSL_BUG_IF_FAILED(direct_fir_init(&thr->fir, lpf_nr_taps, coeffs, &coeffs[base], decimation, true, sample_rate, offset_hz));
+    TSL_BUG_IF_FAILED(polyphase_cfir_new(&thr->fir, lpf_nr_taps, coeffs, 1, decimation, true, sample_rate, offset_hz));
 
 done:
     if (NULL != coeffs) {
@@ -360,13 +348,6 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         TSL_BUG_IF_FAILED(dc_blocker_init(&thr->dc_blk, dc_block_pole));
     }
 
-    /* TODO If applicable, initialize the polyphase rational resampler */
-    if (0 != nr_resample_filter_taps) {
-        TSL_BUG_ON(NULL == resample_filter_taps);
-        TSL_BUG_IF_FAILED(polyphase_fir_new(&thr->pfir, nr_resample_filter_taps, resample_filter_taps,
-                    resample_interpolate, resample_decimate));
-    }
-
     /* Open the debug output file, if applicable */
     if (NULL != fir_debug_output && '\0' != *fir_debug_output) {
         if (0 > (thr->debug_signal_fd = open(fir_debug_output, O_WRONLY))) {
@@ -397,11 +378,9 @@ done:
                 thr->fifo_fd = -1;
             }
 
-            if (NULL != thr->pfir) {
-                TSL_BUG_IF_FAILED(polyphase_fir_delete(&thr->pfir));
+            if (NULL != thr->fir) {
+                TSL_BUG_IF_FAILED(polyphase_cfir_delete(&thr->fir));
             }
-
-            TSL_BUG_IF_FAILED(direct_fir_cleanup(&thr->fir));
 
             TFREE(thr);
         }

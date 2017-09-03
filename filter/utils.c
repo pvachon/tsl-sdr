@@ -115,3 +115,97 @@ done:
     return ret;
 }
 
+/**
+ * Compute the dot product of complex samples spread across a zero-copy buffer with a complex coefficient vector.
+ *
+ * All inputs and outputs from this function are real-valued (i.e. baseband).
+ *
+ * \param sb_active The current sample buffer. Must never be NULL.
+ * \param sb_next The "next" sample buffer. Must not be NULL if sb_active has fewer than nr_coeffs samples in it.
+ * \param buf_start_offset The start offset, in samples, from the start of sb_active to the sample to be dotted starting from.
+ * \param coeffs The coefficients to be dotted with samples in sb_active, sb_next. These are stored as packed complex numbers.
+ * \param nr_coeffs The number of coefficients in the coeffs vector.
+ * \param psample The resultant sample. Returned by reference.
+ *
+ * \return A_OK on success, an error code otherwise.
+ */
+aresult_t dot_product_sample_buffers_complex(
+        struct sample_buf *sb_active,
+        struct sample_buf *sb_next,
+        size_t buf_start_offset,
+        int16_t *coeffs,
+        size_t nr_coeffs,
+        int16_t *psample_re,
+        int16_t *psample_im)
+{
+    aresult_t ret = A_OK;
+
+    int32_t acc_res_re = 0,
+            acc_res_im = 0;
+    size_t coeffs_remain = 0,
+           buf_offset = 0;
+    struct sample_buf *cur_buf = NULL;
+
+    TSL_ASSERT_ARG_DEBUG(NULL != sb_active);
+    TSL_ASSERT_ARG_DEBUG(NULL != coeffs);
+    TSL_ASSERT_ARG_DEBUG(0 != nr_coeffs);
+    TSL_ASSERT_ARG_DEBUG(NULL != psample_re);
+    TSL_ASSERT_ARG_DEBUG(NULL != psample_im);
+
+    coeffs_remain = nr_coeffs;
+    cur_buf = sb_active;
+    buf_offset = buf_start_offset;
+
+    /* Check if we have enough samples available
+     * TODO: we should check if there are enough samples in the following buffer, too.
+     */
+    if (buf_offset + nr_coeffs > sb_active->nr_samples && sb_next == NULL) {
+        ret = A_E_DONE;
+        goto done;
+    }
+
+    /* Walk the number of samples in the current buffer up to the filter size */
+    do {
+        /* Figure out how many samples to pull out */
+        size_t nr_samples_in = cur_buf->nr_samples - buf_offset,
+               start_coeff = nr_coeffs - coeffs_remain;
+
+        /* Snap to either the number of coefficients in the FIR or the number of remaining
+         * coefficients, whichever is smaller.
+         */
+        nr_samples_in = BL_MIN2(nr_samples_in, coeffs_remain);
+
+        for (size_t i = 0; i < nr_samples_in; i++) {
+#ifdef _TSL_DEBUG
+            TSL_BUG_ON(i + start_coeff >= nr_coeffs);
+            TSL_BUG_ON(i + buf_offset >= cur_buf->nr_samples);
+#endif /* defined(_TSL_DEBUG) */
+
+            int32_t sample_re = ((int16_t *)cur_buf->data_buf)[2 * (buf_offset + i)],
+                    sample_im = ((int16_t *)cur_buf->data_buf)[2 * (buf_offset + i) + 1],
+                    coeff_re = coeffs[2 * (start_coeff + i)],
+                    coeff_im = coeffs[2 * (start_coeff + 1) + 1];
+
+            cmul_q15_q30(sample_re, sample_im, coeff_re, coeff_im, &sample_re, &sample_im);
+            acc_res_re += sample_re;
+            acc_res_im += sample_im;
+        }
+
+        /* If we iterate through, we'll start at the beginning of the next buffer */
+        buf_offset = 0;
+        coeffs_remain -= nr_samples_in;
+#ifdef _TSL_DEBUG
+        /* Check if we have coefficients remaining to process */
+        TSL_BUG_ON(cur_buf == sb_next && coeffs_remain != 0);
+#endif
+        cur_buf = sb_next;
+    } while (coeffs_remain != 0);
+
+    /* Return the computed sample, in Q.15 (currently in Q.30 due to the prior multiplications) */
+    *psample_re = round_q30_q15(acc_res_re);
+    *psample_im = round_q30_q15(acc_res_im);
+
+done:
+    return ret;
+}
+
