@@ -1,4 +1,8 @@
 {
   "hackRfSerial" : "0000000000000000925866e62b8423e3",
-  "centerFreq" : 925612500
+  "centerFreq" : 925612500,
+  "dBGainIf" : 0.0,
+  "dBGainTxVga" : 0.0,
+  "ppmClockCorr" : 13.5,
+  "enableBiasTee" : false
 }

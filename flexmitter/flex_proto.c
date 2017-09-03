@@ -96,6 +96,8 @@ aresult_t _flex_proto_generate_square(struct flex_proto *proto)
         sbuf[2 * i + 1] = s_imag;
     }
 
+    TSL_BUG_IF_FAILED(work_queue_push(&proto->wq, sbuf));
+
     return ret;
 }
 
@@ -103,7 +105,10 @@ aresult_t flex_proto_start(struct flex_proto *proto)
 {
     aresult_t ret = A_OK;
 
+    unsigned int wq_size = 0;
+
     TSL_ASSERT_ARG(NULL != proto);
+    TSL_BUG_IF_FAILED(work_queue_size(&proto->wq, &wq_size));
 
     do {
 #if 0
@@ -113,7 +118,13 @@ aresult_t flex_proto_start(struct flex_proto *proto)
 
         /* Encode the message as raw bits */
 #endif
+        unsigned int nr_entries = 0;
+        TSL_BUG_IF_FAILED(work_queue_fill(&proto->wq, &nr_entries));
 
+        if (nr_entries + 1 < wq_size - 1) {
+            DIAG("Pushing in some waves, yo.");
+            TSL_BUG_IF_FAILED(_flex_proto_generate_square(proto));
+        }
     } while (app_running());
 
     return ret;

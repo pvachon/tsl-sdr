@@ -52,7 +52,8 @@ int main(int argc, char * const argv[])
     TSL_BUG_IF_FAILED(flex_proto_init(&proto, cfg));
 
     /* Create the transmitter thread */
-    TSL_BUG_IF_FAILED(tx_thread_new(&thr, cfg));
+    TSL_BUG_IF_FAILED(tx_thread_new(&thr, cfg, &proto.wq, proto.fa));
+    TSL_BUG_ON(NULL == thr);
 
     /* Kick off the protocol handler */
     TSL_BUG_IF_FAILED(flex_proto_start(&proto));

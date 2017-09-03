@@ -60,7 +60,7 @@ def configure(conf):
 	conf.check(lib='ck', uselib='CK', define_name='HAVE_CONCURRENCYKIT', msg='Checking for ConcurrencyKit')
 	conf.check(lib='jansson', uselib='JANSSON', define_name='HAVE_JANSSON', msg='Checking for Jansson (JSON library)')
 	conf.check(lib='despairspy', uselib='DESPAIRSPY', define_name='HAVE_DESPAIRSPY', msg='Checking for DespAirspy');
-	conf.check_cfg(package='libhackrf', uselib_store='HACKRF', define_name='HAVE_HACKRF', args=['--cflags', '--libs'], msg='Checking for HackRF');
+	conf.check_cfg(package='libhackrf', uselib_store='HACKRF', define_name='HAVE_HACKRF', args=['--cflags', '--libs'], msg='Checking for HackRF', mandatory=False);
 
 	#Setup build flags
 	conf.env.CFLAGS += [
@@ -336,12 +336,13 @@ def build(bld):
 	)
 
 	# Flexmitter
-	bld.program(
-		source	= bld.path.ant_glob('flexmitter/*.c'),
-		use		= ['app', 'config', 'tsl', 'HACKRF'],
-		target	= os.path.join(binPath, 'flexmitter'),
-		name	= 'flexmitter',
-	)
+	if bld.env.HAVE_HACKRF:
+		bld.program(
+			source	= bld.path.ant_glob('flexmitter/*.c'),
+			use		= ['app', 'config', 'tsl', 'filter', 'HACKRF'],
+			target	= os.path.join(binPath, 'flexmitter'),
+			name	= 'flexmitter',
+		)
 
 	#test
 	bld.stlib(
