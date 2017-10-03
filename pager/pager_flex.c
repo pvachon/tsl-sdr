@@ -1142,6 +1142,13 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
     DIAG("PHASE %u: BIW: %08x (Prio:%01x EoB:%01x VSW:%02x Carry:%01x Collapse:%01x)",
             phase_id, biw, biw_prio, biw_eob, biw_vsw, biw_carry, biw_m);
 
+    /* Check the sanity of the BIW fields we extracted */
+    if (biw_eob > biw_vsw) {
+        PAG_MSG(SEV_INFO, "BAD-BIW", "%02u/%03u/%c: Skipping BIW - bad vector count count of %u (EoB = %u)", flex->cycle_id,
+                flex->frame_id, phase_id + 'A', biw_vsw, biw_eob);
+        goto done;
+    }
+
     if (0 != biw_eob) {
         /* TODO: walk any additional Block Information Words */
         PAG_MSG(SEV_INFO, "BLOCK", "%02u/%02u/%c BIW end of block = %u",
