@@ -216,6 +216,49 @@ done:
 }
 
 static
+aresult_t _uhd_dump_antenna_names(struct uhd_worker_thread *uthr, size_t channel)
+{
+    aresult_t ret = A_OK;
+
+    uhd_string_vector_handle names = NULL;
+    char str[128];
+    size_t ct = 0;
+
+    TSL_ASSERT_ARG(NULL != uthr);
+    TSL_BUG_ON(NULL == uthr->dev_hdl);
+
+    DIAG("Getting gains for channel %zu...", channel);
+
+    if (UHD_FAILED(uhd_string_vector_make(&names))) {
+        UHD_MSG(SEV_FATAL, "OUT-OF-MEMORY", "Could not make string vector, aborting.");
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+    if (UHD_FAILED(uhd_usrp_get_rx_antennas(uthr->dev_hdl, channel, &names))) {
+        UHD_MSG(SEV_INFO, "CANNOT-GET-ANTENNAS", "Could not get list of antenna names from device, aborting.");
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+    TSL_BUG_ON(UHD_FAILED(uhd_string_vector_size(names, &ct)));
+
+    UHD_MSG(SEV_INFO, "ANTENNAS", "Available antennas on channel %zu:", channel);
+
+    for (size_t i = 0; i < ct; i++) {
+        TSL_BUG_ON(UHD_FAILED(uhd_string_vector_at(names, i, str, sizeof(ct) - 1)));
+        UHD_MSG(SEV_INFO, "ANTENNAS", "    ->  %s", str);
+    }
+
+done:
+    if (NULL != names) {
+        TSL_BUG_ON(UHD_FAILED(uhd_string_vector_free(&names)));
+        names = NULL;
+    }
+    return ret;
+}
+
+static
 aresult_t _uhd_dump_gain_names(struct uhd_worker_thread *uthr, size_t channel)
 {
     aresult_t ret = A_OK;
@@ -266,7 +309,8 @@ aresult_t uhd_worker_thread_new(struct receiver **pthr, struct config *cfg)
 
     struct uhd_worker_thread *uthr = NULL;
 
-    const char *dev_str = NULL;
+    const char *dev_str = NULL,
+               *antenna = NULL;
     struct config device = CONFIG_INIT_EMPTY,
                   gains = CONFIG_INIT_EMPTY,
                   gain_config = CONFIG_INIT_EMPTY;
@@ -277,6 +321,7 @@ aresult_t uhd_worker_thread_new(struct receiver **pthr, struct config *cfg)
     size_t chan_t = 0,
            cnt = 0,
            samps_per_buf = 0;
+    char str[128];
 
     TSL_ASSERT_ARG(NULL != pthr);
     TSL_ASSERT_ARG(NULL != cfg);
@@ -326,8 +371,27 @@ aresult_t uhd_worker_thread_new(struct receiver **pthr, struct config *cfg)
         goto done;
     }
 
+    if (!UHD_FAILED(uhd_usrp_get_rx_antenna(uthr->dev_hdl, channel, str, sizeof(str) - 1))) {
+        DIAG("Channel %d label: [%s]", channel, str);
+    }
+
+    if (FAILED(ret = config_get_string(&device, &antenna, "antenna"))) {
+        UHD_MSG(SEV_FATAL, "NO-ANTENNA", "Need to specify an antenna, aborting");
+        TSL_BUG_IF_FAILED(_uhd_dump_antenna_names(uthr, channel));
+        goto done;
+    }
+
     UHD_MSG(SEV_INFO, "OPENED-DEVICE", "Opened USRP [%s] Channel: %d", dev_str, channel);
 
+    /* Set the input antenna */
+    if (UHD_FAILED(uhd_usrp_set_rx_antenna(uthr->dev_hdl, antenna, channel))) {
+        UHD_MSG(SEV_FATAL, "NO-RX-ANTENNA", "Failed to set channel %d to input from antenna %s",
+                channel, antenna);
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+    /* Prepare the RX streamer */
     if (UHD_FAILED(uhd_rx_streamer_make(&uthr->rx_stream))) {
         UHD_MSG(SEV_FATAL, "FAILED-STREAM-CREATION", "Failed to create RX streamer, aborting.");
         ret = A_E_INVAL;

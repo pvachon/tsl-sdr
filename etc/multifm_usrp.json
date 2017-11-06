@@ -3,6 +3,7 @@
     "type" : "usrp",
     "deviceId" : "serial=30E6230",
     "channel" : 0,
+    "antenna" : "TX/RX",
     "gain" : [
       { "name" : "PGA", "dBValue" : 32.2 }
     ]
