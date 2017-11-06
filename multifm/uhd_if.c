@@ -13,6 +13,8 @@
 
 #define UHD_FAILED(x) (!!((x) != UHD_ERROR_NONE))
 
+#define MAX_BUF_SAMPS   (16 * 1024)
+
 static
 aresult_t _uhd_rx_worker_thread(struct receiver *rx)
 {
@@ -21,30 +23,52 @@ aresult_t _uhd_rx_worker_thread(struct receiver *rx)
     struct uhd_worker_thread *uw = NULL;
     uhd_rx_metadata_handle meta = NULL;
     struct sample_buf *buf = NULL;
+    uhd_stream_cmd_t sc;
 
     TSL_ASSERT_ARG(NULL != rx);
 
     if (UHD_FAILED(uhd_rx_metadata_make(&meta))) {
         UHD_MSG(SEV_FATAL, "OUT-OF-MEM", "Could not make UHD RX Metadata object, aborting.");
+        ret = A_E_INVAL;
         goto done;
     }
 
+    sc = (uhd_stream_cmd_t){
+        .stream_mode = UHD_STREAM_MODE_START_CONTINUOUS,
+        .stream_now = true,
+    };
+
     uw = BL_CONTAINER_OF(rx, struct uhd_worker_thread, rx);
 
-    DIAG("uw = %p", uw);
+    if (UHD_FAILED(uhd_rx_streamer_issue_stream_cmd(uw->rx_stream, &sc))) {
+        UHD_MSG(SEV_FATAL, "FAILED-TO-START", "Failed to issue stream command to USRP, aborting.");
+        ret = A_E_INVAL;
+        goto done;
+    }
 
     while (receiver_thread_running(rx)) {
         size_t nr_samps = 0;
         TSL_BUG_IF_FAILED(receiver_sample_buf_alloc(rx, &buf));
 
-        if (UHD_FAILED(uhd_rx_streamer_recv(uw->rx_stream, (void **)&buf->data_buf, 16 * 1024,
-                        &meta, 0.0, false, &nr_samps)))
-        {
-            UHD_MSG(SEV_FATAL, "RECEIVE-ERROR", "Failure while receiving USRP samples, aborting.");
-            ret = A_E_INVAL;
-            goto done;
-        }
-    }
+        while (NULL != buf) {
+            void *buf_offs = buf->data_buf + 2 * sizeof(int16_t) * buf->nr_samples;
+
+            if (UHD_FAILED(uhd_rx_streamer_recv(uw->rx_stream, buf_offs, MAX_BUF_SAMPS - buf->nr_samples,
+                            &meta, 0.0, false, &nr_samps)))
+            {
+                UHD_MSG(SEV_FATAL, "RECEIVE-ERROR", "Failure while receiving USRP samples, aborting.");
+                ret = A_E_INVAL;
+                goto done;
+            }
+
+            buf->nr_samples += nr_samps;
+
+            if (buf->nr_samples == MAX_BUF_SAMPS) {
+                TSL_BUG_IF_FAILED(receiver_sample_buf_deliver(rx, buf));
+                buf = NULL;
+            }
+        } /* end iterating to fill buffer */
+    } /* end infinite loop while thread is running */
 
 done:
     if (NULL != meta) {
