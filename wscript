@@ -60,6 +60,7 @@ def configure(conf):
 	conf.check(lib='ck', uselib='CK', define_name='HAVE_CONCURRENCYKIT', msg='Checking for ConcurrencyKit')
 	conf.check(lib='jansson', uselib='JANSSON', define_name='HAVE_JANSSON', msg='Checking for Jansson (JSON library)')
 	conf.check(lib='despairspy', uselib='DESPAIRSPY', define_name='HAVE_DESPAIRSPY', msg='Checking for DespAirspy', mandatory=False);
+	conf.check(lib='uhd', uselib='UHD', define_name='HAVE_UHD', msg='Checking for Ettus UHD', mandatory=False);
 
 
 	#Setup build flags
@@ -251,9 +252,12 @@ def build(bld):
 	if not bld.env.LIB_RTLSDR:
 		excl += [ 'multifm/rtl_sdr_if.c' ]
 
+	if not bld.env.LIB_UHD:
+		excl += [ 'multifm/uhd_if.c' ]
+
 	bld.program(
 		source	= bld.path.ant_glob('multifm/*.c', excl=excl),
-		use		= ['app', 'config', 'tsl', 'filter', 'RTLSDR', 'DESPAIRSPY'],
+		use		= ['app', 'config', 'tsl', 'filter', 'RTLSDR', 'DESPAIRSPY', 'UHD'],
 		target	= os.path.join(binPath, 'multifm'),
 		name	= 'multifm',
 	)

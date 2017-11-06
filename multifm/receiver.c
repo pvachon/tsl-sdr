@@ -385,3 +385,10 @@ aresult_t receiver_set_mute(struct receiver *rx, bool mute)
     return ret;
 }
 
+bool receiver_thread_running(struct receiver *rx)
+{
+    TSL_BUG_ON(NULL == rx);
+
+    return worker_thread_is_running(&rx->wthr);
+}
+

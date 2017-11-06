@@ -1,0 +1,48 @@
+{
+  "device" : {
+    "type" : "usrp",
+    "deviceId" : "serial=30E6230",
+    "channel" : 0,
+    "gain" : [
+      { "name" : "PGA", "dBValue" : 10.2 }
+    ]
+  },
+  "sampleRateHz" : 10000000,
+  "centerFreqHz" : 929500000,
+  "nrSampBufs" : 128,
+  "decimationFactor" : 40,
+  "channels" : [
+    {
+      "outFifo" : "/home/pi/ch7.out",
+      "chanCenterFreq" : 929838000
+    },
+    {
+      "outFifo" : "/home/pi/ch6.out",
+      "chanCenterFreq" : 929538000
+    },
+    {
+      "outFifo" : "/home/pi/ch5.out",
+      "chanCenterFreq" : 929388000
+    },
+    {
+      "outFifo" : "/home/pi/ch4.out",
+      "chanCenterFreq" : 929938000
+    },
+    {
+      "outFifo" : "/home/pi/ch3.out",
+      "chanCenterFreq" : 929362000
+    },
+    {
+      "outFifo" : "/home/pi/ch2.out",
+      "chanCenterFreq" : 929662500
+    },
+    {
+      "outFifo" : "/home/pi/ch1.out",
+      "chanCenterFreq" : 929638000
+    },
+    {
+      "outFifo" : "/home/pi/ch0.out",
+      "chanCenterFreq" : 929612000
+    }
+  ]
+}

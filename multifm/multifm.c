@@ -31,6 +31,10 @@
 #include <multifm/airspy_if.h>
 #endif
 
+#ifdef HAVE_UHD
+#include <multifm/uhd_if.h>
+#endif
+
 #include <multifm/receiver.h>
 
 #include <filter/sample_buf.h>
@@ -131,6 +135,13 @@ int main(int argc, const char *argv[])
         TSL_BUG_IF_FAILED(airspy_worker_thread_new(&rx_thr, cfg));
 #else
         MFM_MSG(SEV_FATAL, "AIRSPY-NOT-SUPPORTED", "Airspy devices are not supported by this build.");
+        goto done;
+#endif
+    } else if (!strncmp(dev_type, "usrp", 4)) {
+#if HAVE_DESPAIRSPY
+        TSL_BUG_IF_FAILED(uhd_worker_thread_new(&rx_thr, cfg));
+#else
+        MFM_MSG(SEV_FATAL, "USRP-NOT-SUPPORTED", "USRP devices are not supported by this build.");
         goto done;
 #endif
     } else {

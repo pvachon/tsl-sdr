@@ -107,3 +107,14 @@ aresult_t receiver_set_mute(struct receiver *rx, bool mute);
  */
 aresult_t receiver_sample_buf_deliver(struct receiver *rx, struct sample_buf *buf);
 
+/**
+ * Check if this receiver is still scheduled to be running
+ *
+ * \param rx The receiver state
+ *
+ * \return true if the thread is still scheduled to run, false otherwise
+ *
+ * \note asserts failure if rx is invalid
+ */
+bool receiver_thread_running(struct receiver *rx);
+
