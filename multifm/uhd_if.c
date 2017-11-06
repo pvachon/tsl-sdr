@@ -49,14 +49,28 @@ aresult_t _uhd_rx_worker_thread(struct receiver *rx)
     while (receiver_thread_running(rx)) {
         size_t nr_samps = 0;
         TSL_BUG_IF_FAILED(receiver_sample_buf_alloc(rx, &buf));
+        buf->nr_samples = 0;
 
         while (NULL != buf) {
             void *buf_offs = buf->data_buf + 2 * sizeof(int16_t) * buf->nr_samples;
+            uhd_rx_metadata_error_code_t error_code;
 
-            if (UHD_FAILED(uhd_rx_streamer_recv(uw->rx_stream, buf_offs, MAX_BUF_SAMPS - buf->nr_samples,
-                            &meta, 0.0, false, &nr_samps)))
+            if (UHD_FAILED(uhd_rx_streamer_recv(uw->rx_stream, &buf_offs, MAX_BUF_SAMPS - buf->nr_samples,
+                            &meta, 5.0, false, &nr_samps)))
             {
                 UHD_MSG(SEV_FATAL, "RECEIVE-ERROR", "Failure while receiving USRP samples, aborting.");
+                ret = A_E_INVAL;
+                goto done;
+            }
+
+            if (UHD_FAILED(uhd_rx_metadata_error_code(meta, &error_code))) {
+                UHD_MSG(SEV_FATAL, "RX-ERROR", "Receive error occurred.");
+                ret = A_E_INVAL;
+                goto done;
+            }
+
+            if (error_code != UHD_RX_METADATA_ERROR_CODE_NONE) {
+                UHD_MSG(SEV_FATAL, "RX-ERROR-CODE", "Receive error code received: %d", error_code);
                 ret = A_E_INVAL;
                 goto done;
             }
@@ -267,7 +281,7 @@ aresult_t uhd_worker_thread_new(struct receiver **pthr, struct config *cfg)
     TSL_ASSERT_ARG(NULL != pthr);
     TSL_ASSERT_ARG(NULL != cfg);
 
-    pthr = NULL;
+    *pthr = NULL;
 
     memset(&sa, 0, sizeof(sa));
 
@@ -282,12 +296,12 @@ aresult_t uhd_worker_thread_new(struct receiver **pthr, struct config *cfg)
         goto done;
     }
 
-    DIAG("Device ID: [%s]", dev_str);
-
     if (FAILED(config_get_integer(&device, &channel, "channelId"))) {
         UHD_MSG(SEV_INFO, "DEFAULT-CHANNEL", "No receive channel specified, defaulting to 0");
         channel = 0;
     }
+
+    DIAG("Device ID: [%s] Channel: %d", dev_str, channel);
 
     if (FAILED(ret = config_get_integer(cfg, &sample_rate, "sampleRateHz"))) {
         UHD_MSG(SEV_FATAL, "NO-SAMPLE-RATE", "Need to specify sampleRateHz in configuration");
@@ -312,7 +326,7 @@ aresult_t uhd_worker_thread_new(struct receiver **pthr, struct config *cfg)
         goto done;
     }
 
-    UHD_MSG(SEV_INFO, "OPENED-DEVICE", "Opened USRP [%s]", dev_str);
+    UHD_MSG(SEV_INFO, "OPENED-DEVICE", "Opened USRP [%s] Channel: %d", dev_str, channel);
 
     if (UHD_FAILED(uhd_rx_streamer_make(&uthr->rx_stream))) {
         UHD_MSG(SEV_FATAL, "FAILED-STREAM-CREATION", "Failed to create RX streamer, aborting.");
@@ -376,8 +390,10 @@ aresult_t uhd_worker_thread_new(struct receiver **pthr, struct config *cfg)
     UHD_MSG(SEV_INFO, "SAMPLES-PER-BUFFER", "Maximum samples per buffer: %zu", samps_per_buf);
 
     /* Initialize the receiver subsystem */
-    TSL_BUG_IF_FAILED(receiver_init(&uthr->rx, cfg, _uhd_rx_worker_thread, _uhd_cleanup,
-                16*1024));
+    DIAG("Initializing the receiver subsystem.");
+    TSL_BUG_IF_FAILED(receiver_init(&uthr->rx, cfg, _uhd_rx_worker_thread, _uhd_cleanup, MAX_BUF_SAMPS));
+
+    DIAG("We're all set up!");
 
     *pthr = &uthr->rx;
 
@@ -396,6 +412,7 @@ done:
         }
 
     }
+
     return ret;
 }
 
