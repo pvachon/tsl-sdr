@@ -31,7 +31,7 @@
 #include <multifm/airspy_if.h>
 #endif
 
-#ifdef HAVE_UHD
+#if HAVE_UHD
 #include <multifm/uhd_if.h>
 #endif
 
@@ -138,7 +138,7 @@ int main(int argc, const char *argv[])
         goto done;
 #endif
     } else if (!strncmp(dev_type, "usrp", 4)) {
-#if HAVE_DESPAIRSPY
+#if HAVE_UHD
         TSL_BUG_IF_FAILED(uhd_worker_thread_new(&rx_thr, cfg));
 #else
         MFM_MSG(SEV_FATAL, "USRP-NOT-SUPPORTED", "USRP devices are not supported by this build.");

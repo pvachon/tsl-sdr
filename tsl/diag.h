@@ -30,11 +30,9 @@
 #include <stdio.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <tsl/time.h>
 
 #ifdef _TSL_DEBUG
-#include <tsl/time.h>
-#include <tsl/diag.h>
-
 #include <string.h>
 #include <errno.h>
 
@@ -99,20 +97,10 @@
  * \param message A human-readable message
  * \note Line number and function name are also output as a part of this function
  */
-#if defined(_TSL_DEBUG) && !defined(_TSL_NO_DIAG_TIMESTAMPS)
-
 #define MESSAGE(subsys, severity, ident, message, ...) \
     do {                            \
         uint32_t hi = 0, lo = 0;                                                                                                                \
         time_get_time_frac(&hi, &lo);                                                                                                           \
         fprintf(stderr, "[%9u.%09u] [tid=%5d] %%" subsys "-" severity "-" ident ", " message " (%s:%d in %s)\n", hi, lo, (int)syscall(SYS_gettid), ##__VA_ARGS__, __FILE__, __LINE__, __FUNCTION__); \
     } while (0)
-
-#else
-
-#define MESSAGE(subsys, severity, ident, message, ...) \
-    do {                            \
-        fprintf(stderr, "%%" subsys "-" severity "-" ident ", " message " (%s:%d in %s)\n", ##__VA_ARGS__, __FILE__, __LINE__, __FUNCTION__); \
-    } while (0)
-#endif /* defined(_TSL_DEBUG) && undefined(_TSL_NO_DIAG_TIMESTAMPS) */
 
