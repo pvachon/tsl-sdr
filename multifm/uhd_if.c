@@ -11,6 +11,8 @@
 #include <tsl/diag.h>
 #include <tsl/assert.h>
 
+#include <string.h>
+
 #define UHD_FAILED(x) (!!((x) != UHD_ERROR_NONE))
 
 #define MAX_BUF_SAMPS   (16 * 1024)
