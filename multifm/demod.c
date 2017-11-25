@@ -85,6 +85,8 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         /* TODO: smarten this up a lot - this sucks */
         dthr->nr_pcm_samples = 0;
 
+        const float to_q15 = (float)(1 << Q_15_SHIFT);
+
         for (size_t i = 0; i < dthr->nr_fm_samples; i++) {
             TSL_BUG_ON(LPF_PCM_OUTPUT_LEN <= dthr->nr_pcm_samples);
             /* Get the complex conjugate of the prior sample, negating the phase term */
@@ -92,22 +94,19 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
                     b_im = -dthr->last_fm_im,
                     a_re =  dthr->fm_samp_out_buf[2 * i    ],
                     a_im =  dthr->fm_samp_out_buf[2 * i + 1];
-            int16_t s_re = 0,
+            int32_t s_re = 0,
                     s_im = 0;
 
             /* Calculate the phase difference */
-            cmul_q15_q15(a_re, a_im, b_re, b_im, &s_re, &s_im);
+            s_re = a_re * b_re - a_im * b_im;
+            s_im = a_re * b_im + a_im * b_re;
 
             /* Convert from cartesian coordinates to a phase angle */
             /* TODO: This needs to be made full-integer */
-            float q15 = 1l << Q_15_SHIFT;
-            float f_im = s_im,
-                  f_re = s_re;
-            /* Find phase angle of normalized cartesian coordinates */
-            float phi = fast_atan2f(f_im, f_re);
+            float phi = fast_atan2f((float)s_im, (float)s_re);
 
             /* Scale by pi (since atan2 returns an angle in (-pi,pi]), convert back to Q.15 */
-            float phi_scaled = phi/M_PI * q15;
+            float phi_scaled = (phi/M_PI) * to_q15;
             dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)phi_scaled;
 
             dthr->nr_pcm_samples++;
