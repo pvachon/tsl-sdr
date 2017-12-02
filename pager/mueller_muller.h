@@ -4,6 +4,8 @@
 
 #include <stdint.h>
 
+//#define _MM_DEBUG
+
 /**
  * State for a Mueller-Muller clock recovery.
  *
@@ -17,11 +19,24 @@ struct mueller_muller {
     /* Number of samples, per bit, based on the sample rate */
     float samples_per_bit;
 
-    /* "Product" coefficient of the PI loop for MM recovery */
-    float kp;
+    /* Omega gain for control loop */
+    float kw;
+
+    /* Mu gain for control loop */
+    float km;
 
     float error_min;
     float error_max;
+
+    /**
+     * Omega
+     */
+    float w;
+
+    /**
+     * Mu
+     */
+    float m;
 
     /**
      * Offset of the next sample to process in the following block.
@@ -32,20 +47,33 @@ struct mueller_muller {
      * Prior sample processed
      */
     float last_sample;
+
+    /**
+     * The step size, specified at initialization
+     */
+    float ideal_step_size;
+
+#ifdef _MM_DEBUG
+    /**
+     * Total samples processed
+     */
+    uint64_t nr_samples;
+#endif
 };
 
 /**
  * Initialize a new Mueller-Muller CLock Recovery instance
  *
  * \param mm Memory to initialize state within
- * \param kp The scaling factor for the Mueller-Muller control loop
+ * \param kw Omega gain
+ * \param km Mu gain
  * \param samples_per_bit The number of samples of the input per decision output
  * \param error_min The minimum range of error in the control loop before clamping
  * \param error_max The maximum range of error in the control loop before clamping
  *
  * \return A_OK on success, an error code otherwise
  */
-aresult_t mm_init(struct mueller_muller *mm, float kp, float samples_per_bit, float error_min, float error_max);
+aresult_t mm_init(struct mueller_muller *mm, float kp, float km, float samples_per_bit, float error_min, float error_max);
 
 /**
  * Feed the next sample block to the Mueller-Muller Clock Recovery.
