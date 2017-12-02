@@ -1,0 +1,20 @@
+{
+  "device" : {
+    "type" : "airspy",
+    "lnaGain" : 8,
+    "vgaGain" : 5,
+    "mixerGain" : 5,
+    "enableBiasTee" : true
+  },
+  "sampleRateHz" : 2500000,
+  "centerFreqHz" : 152500000,
+  "nrSampBufs" : 128,
+  "decimationFactor" : 100,
+  "channels" : [
+    {
+      "outFifo" : "/home/pvachon/ch0.out",
+      "dBGain" : 2.0,
+      "chanCenterFreq" : 152180000
+    }
+  ]
+}
