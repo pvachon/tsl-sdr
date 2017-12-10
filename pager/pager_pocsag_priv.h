@@ -1,6 +1,7 @@
 #pragma once
 
 #include <pager/pager_pocsag.h>
+#include <pager/bch_code.h>
 
 #define PAGER_POCSAG_BATCH_BITS         512
 #define PAGER_POCSAG_SYNC_BITS          32
@@ -94,6 +95,11 @@ struct pager_pocsag_batch {
      * The next bit to be populated in the batch
      */
     uint16_t current_batch_word_bit;
+
+    /**
+     * Total bit count in this batch
+     */
+    uint16_t bit_count;
 };
 
 struct pager_pocsag_sync_search {
@@ -145,6 +151,14 @@ struct pager_pocsag {
      */
     struct pager_pocsag_baud_detect *baud_2400;
 
+    /**
+     * State for BCH(31, 21) code
+     */
+    struct bch_code *bch;
+
+    /**
+     * Current state of the wire protocol handling
+     */
     enum pager_pocsag_state cur_state;
 };
 
