@@ -34,7 +34,7 @@ aresult_t test_mueller_muller_setup(void)
 
     TEST_INF("Retrieving MM test data from directory '%s'", test_data_dir);
 
-    TSL_BUG_IF_FAILED(tasprintf(&file_path, "%s/%s", test_data_dir, "pocsag_single_burst_25khz.raw"));
+    TSL_BUG_IF_FAILED(tasprintf(&file_path, "%s/%s", test_data_dir, "pocsag_hospital_25khz_long.raw"));
 
     if (NULL == (fp = fopen(file_path, "r"))) {
         TEST_ERR("Failed to open file %s, aborting.", file_path);
@@ -92,7 +92,7 @@ aresult_t test_mueller_muller_cleanup(void)
     return ret;
 }
 
-#define TEST_KW                     0.0001 //(80.0/((double)(1 << 15)))
+#define TEST_KW                     0.0001
 #define TEST_KM                     0.000004
 #define TEST_SAMPLES_PER_BIT        (25000.0f/1200.0f)
 #define TEST_ERROR_MARGIN           0.05f
