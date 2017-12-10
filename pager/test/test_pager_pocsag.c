@@ -6,6 +6,7 @@
 #include <tsl/safe_string.h>
 #include <tsl/safe_alloc.h>
 #include <tsl/assert.h>
+#include <tsl/hexdump.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -15,6 +16,8 @@ const int16_t *samples = NULL;
 
 static
 size_t nr_samples = 0;
+
+#define TEST_FILE_NAME "pocsag_hospital_38400_long.raw"
 
 static
 aresult_t test_pager_pocsag_setup(void)
@@ -34,7 +37,7 @@ aresult_t test_pager_pocsag_setup(void)
 
     TEST_INF("Retrieving POCSAG test data from directory '%s'", test_data_dir);
 
-    TSL_BUG_IF_FAILED(tasprintf(&file_path, "%s/%s", test_data_dir, "pocsag_single_burst_38400.raw"));
+    TSL_BUG_IF_FAILED(tasprintf(&file_path, "%s/%s", test_data_dir, TEST_FILE_NAME));
 
     if (NULL == (fp = fopen(file_path, "r"))) {
         TEST_ERR("Failed to open file %s, aborting.", file_path);
@@ -99,8 +102,11 @@ aresult_t _test_pocsag_on_message_simple_cb(
         uint16_t baud_rate,
         uint32_t capcode,
         const char *data,
-        size_t data_len)
+        size_t data_len,
+        uint8_t function)
 {
+    fprintf(stderr, "POCSAG: ALN(%u): [%8u]: %s\n", (unsigned)function, capcode, data);
+    hexdump_dump_hex(data, data_len);
     return A_OK;
 }
 
@@ -110,8 +116,10 @@ aresult_t _test_pocsag_on_num_message_simple_cb(
         uint16_t baud_rate,
         uint32_t capcode,
         const char *data,
-        size_t data_len)
+        size_t data_len,
+        uint8_t function)
 {
+    fprintf(stderr, "POCSAG: NUMi(%u): [%8u]: %s\n", function, capcode, data);
     return A_OK;
 }
 

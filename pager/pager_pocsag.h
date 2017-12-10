@@ -9,14 +9,16 @@ typedef aresult_t (*pager_pocsag_on_numeric_msg_func_t)(
         uint16_t baud_rate,
         uint32_t capcode,
         const char *data,
-        size_t data_len);
+        size_t data_len,
+        uint8_t function);
 
 typedef aresult_t (*pager_pocsag_on_alpha_msg_func_t)(
         struct pager_pocsag *pocsag,
         uint16_t baud_rate,
         uint32_t capcode,
         const char *data,
-        size_t data_len);
+        size_t data_len,
+        uint8_t function);
 
 /**
  * Create a new POCSAG decoder.

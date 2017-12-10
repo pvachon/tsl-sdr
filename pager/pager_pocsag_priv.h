@@ -40,14 +40,64 @@ enum pager_pocsag_state {
 #define POCSAG_SYNC_CODEWORD            0x7cd215d8ul
 
 /**
- * Idle codeword, used to detect when words in a batch are to be ignored
+ * Idle codeword, used to detect when words in a batch are to be ignored.
+ * Post-BCH correction.
  */
-#define POCSAG_IDLE_CODEWORD            0x7a89c197ul
+#define POCSAG_IDLE_CODEWORD            0x6983915eu
 
 #define POCSAG_PAGER_BASE_BAUD_RATE     38400
 #define POCSAG_PAGER_BAUD_512_SAMPLES   (POCSAG_PAGER_BASE_BAUD_RATE/512)
 #define POCSAG_PAGER_BAUD_1200_SAMPLES  (POCSAG_PAGER_BASE_BAUD_RATE/1200)
 #define POCSAG_PAGER_BAUD_2400_SAMPLES  (POCSAG_PAGER_BASE_BAUD_RATE/2400)
+
+#define POCSAG_PAGER_MAX_ALNUM_LEN      42
+#define POCSAG_PAGER_MAX_NUM_LEN        75
+
+enum pager_pocsag_message_type {
+    PAGER_POCSAG_MESSAGE_TYPE_INVALID = 0,
+    PAGER_POCSAG_MESSAGE_TYPE_ALPHA = 1,
+    PAGER_POCSAG_MESSAGE_TYPE_NUMERIC = 2,
+};
+
+/**
+ * Current POCSAG message decoding
+ */
+struct pager_pocsag_message_decode {
+    /**
+     * The currently decoded message
+     */
+    char message[512];
+
+    /**
+     * The next message byte to be written
+     */
+    size_t next_byte;
+
+    /**
+     * The CAPcode this message is destined for
+     */
+    uint32_t cap_code;
+
+    /**
+     * Active data word
+     */
+    uint32_t data_word;
+
+    /**
+     * Number of bits in the active data word
+     */
+    size_t data_word_valid_bits;
+
+    /**
+     * Function value recorded in address word
+     */
+    uint8_t function;
+
+    /**
+     * The message type
+     */
+    enum pager_pocsag_message_type msg_type;
+};
 
 /**
  * Processing state for detecting the baud rate of a burst of POCSAG
@@ -74,6 +124,9 @@ struct pager_pocsag_baud_detect {
     uint32_t eye_detect[];
 };
 
+/**
+ * Batch word collection state
+ */
 struct pager_pocsag_batch {
     /**
      * The slice bit count
@@ -102,9 +155,23 @@ struct pager_pocsag_batch {
     uint16_t bit_count;
 };
 
+/**
+ * Sync search state, for after receiving a batch
+ */
 struct pager_pocsag_sync_search {
+    /**
+     * The current skipped sample ID
+     */
     uint16_t cur_sample_skip;
+
+    /**
+     * Number of sync bits captured
+     */
     size_t nr_sync_bits;
+
+    /**
+     * Current estimated sync word
+     */
     uint32_t sync_word;
 };
 
@@ -150,6 +217,11 @@ struct pager_pocsag {
      * State for decoding 2400bps SuperPOCSAG
      */
     struct pager_pocsag_baud_detect *baud_2400;
+
+    /**
+     * Message decoder state
+     */
+    struct pager_pocsag_message_decode decoder;
 
     /**
      * State for BCH(31, 21) code

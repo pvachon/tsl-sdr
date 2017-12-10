@@ -29,6 +29,11 @@
 #include <tsl/diag.h>
 #include <tsl/assert.h>
 
+/* Remove after testing is done ... */
+#include <tsl/panic.h>
+
+#include <string.h>
+
 static
 bool __pager_pocsag_check_sync_word(uint32_t word)
 {
@@ -140,6 +145,9 @@ aresult_t pager_pocsag_new(struct pager_pocsag **ppocsag, uint32_t freq_hz,
 
     TSL_BUG_IF_FAILED(bch_code_new(&pocsag->bch, poly, 5, 31, 21, 2));
 
+    pocsag->on_numeric = on_numeric;
+    pocsag->on_alpha = on_alpha;
+
     _pager_pocsag_baud_search_reset(pocsag);
 
     *ppocsag = pocsag;
@@ -196,6 +204,142 @@ aresult_t pager_pocsag_delete(struct pager_pocsag **ppocsag)
     return ret;
 }
 
+static
+aresult_t _pager_pocsag_message_decode_reset(struct pager_pocsag_message_decode *decode)
+{
+    aresult_t ret = A_OK;
+
+    TSL_ASSERT_ARG_DEBUG(NULL != decode);
+
+    decode->data_word = 0;
+    decode->next_byte = 0;
+    decode->data_word_valid_bits = 0;
+    decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_INVALID;
+    decode->function = 0;
+
+    return ret;
+}
+
+static
+aresult_t _pager_pocsag_message_decode_deliver(struct pager_pocsag *pocsag, struct pager_pocsag_message_decode *decode)
+{
+    aresult_t ret = A_OK;
+
+    TSL_ASSERT_ARG_DEBUG(NULL != pocsag);
+    TSL_ASSERT_ARG_DEBUG(NULL != decode);
+
+    if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_INVALID) {
+        decode->message[decode->next_byte] = '\0';
+        if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_NUMERIC) {
+            TSL_BUG_IF_FAILED(pocsag->on_alpha(pocsag, 1200, decode->cap_code, decode->message, decode->next_byte, decode->function));
+        } else {
+            TSL_BUG_IF_FAILED(pocsag->on_numeric(pocsag, 1200, decode->cap_code, decode->message, decode->next_byte, decode->function));
+        }
+    }
+    _pager_pocsag_message_decode_reset(decode);
+
+    return ret;
+}
+
+static const
+char _pager_pocsag_numeric_message_charmap[16] = {
+    [0] = '0',
+    [1] = '1',
+    [2] = '2',
+    [3] = '3',
+    [4] = '4',
+    [5] = '5',
+    [6] = '6',
+    [7] = '7',
+    [8] = '8',
+    [9] = '9',
+    [10] = 'X',
+    [11] = 'U',
+    [12] = ' ',
+    [13] = '-',
+    [14] = '[',
+    [15] = ']',
+};
+
+static
+aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_pocsag_batch *batch)
+{
+    aresult_t ret = A_OK;
+
+    struct pager_pocsag_message_decode *decode = NULL;
+
+    TSL_ASSERT_ARG_DEBUG(NULL != pocsag);
+    TSL_ASSERT_ARG_DEBUG(NULL != batch);
+
+    decode = &pocsag->decoder;
+
+    for (size_t z = 0; z < PAGER_POCSAG_BATCH_BITS/32; z++) {
+        uint32_t corrected = batch->current_batch[z] & 0x7ffffffful;
+
+        if (bch_code_decode(pocsag->bch, &corrected)) {
+            /* We're stuck. POCSAG is too fragile to try to continue decoding, so we have to
+             * discard the (rest) of the batch.
+             */
+            DIAG("Abandoning batch, too many uncorrectable errors.");
+            TSL_BUG_IF_FAILED(_pager_pocsag_message_decode_deliver(pocsag, decode));
+            ret = A_E_INVAL;
+            goto done;
+        }
+
+        if (corrected == POCSAG_IDLE_CODEWORD) {
+            TSL_BUG_IF_FAILED(_pager_pocsag_message_decode_deliver(pocsag, decode));
+            /* Skip idle words */
+            continue;
+        }
+
+        if ((corrected & 1) == 0) {
+            /* Deliver any pending message */
+            TSL_BUG_IF_FAILED(_pager_pocsag_message_decode_deliver(pocsag, decode));
+            decode->function = (corrected >> 19) & 0x3;
+            decode->cap_code = (((corrected >> 1) & ((1 << 18) - 1)) << 3) + ((z >> 1) & 0x7);
+            DIAG("  ADDR: %u Function %u (raw = 0x%08x)", decode->cap_code, decode->function, corrected);
+            if (decode->function == 1 || decode->function == 2) {
+                decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_ALPHA;
+            } else if (decode->function == 0) {
+                decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_NUMERIC;
+            } else {
+                decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_INVALID;
+            }
+        } else {
+            uint32_t val = (corrected >> 1) & ((1 << 20) - 1);
+            if (decode->data_word_valid_bits + 20 > 32) {
+                PANIC("ERROR: %zu valid bits, should be less than 7", decode->data_word_valid_bits);
+            }
+            decode->data_word |= val << decode->data_word_valid_bits;
+            decode->data_word_valid_bits += 20;
+
+            switch (decode->msg_type) {
+            case PAGER_POCSAG_MESSAGE_TYPE_ALPHA:
+                while (decode->data_word_valid_bits >= 7) {
+                    decode->message[decode->next_byte++] = decode->data_word & 0x7f;
+                    decode->data_word >>= 7;
+                    decode->data_word_valid_bits -= 7;
+                }
+                break;
+            case PAGER_POCSAG_MESSAGE_TYPE_NUMERIC:
+                while (decode->data_word_valid_bits >= 4) {
+                    uint8_t bcd = decode->data_word & 0xf;
+                    decode->message[decode->next_byte++] = _pager_pocsag_numeric_message_charmap[bcd];
+                    decode->data_word >>= 4;
+                    decode->data_word_valid_bits -= 4;
+                }
+                break;
+            default:
+                decode->data_word_valid_bits = 0;
+                DIAG("Unknown message type in message decoder, aborting.");
+            }
+        }
+    }
+
+done:
+    return ret;
+}
+
 aresult_t pager_pocsag_on_pcm(struct pager_pocsag *pocsag, const int16_t *pcm_samples, size_t nr_samples)
 {
     aresult_t ret = A_OK;
@@ -244,21 +388,13 @@ aresult_t pager_pocsag_on_pcm(struct pager_pocsag *pocsag, const int16_t *pcm_sa
                     batch->bit_count++;
                     batch->cur_sample_skip = 0;
 
-                    //fprintf(stdout, " %zu, %d; \n", next_sample, (int)sample);
-
                     if (batch->current_batch_word_bit == 32) {
                         batch->current_batch_word_bit = 0;
                         batch->current_batch_word++;
                         if (batch->current_batch_word == PAGER_POCSAG_BATCH_BITS/32) {
                             /* Process the batch */
-                            for (size_t z = 0; z < PAGER_POCSAG_BATCH_BITS/32; z++) {
-                                uint32_t corrected = batch->current_batch[z] & 0x7ffffffful;
-                                bool calc_parity = !(__builtin_popcount(batch->current_batch[z]) & 1);
-
-                                if (bch_code_decode(pocsag->bch, &corrected)) {
-                                    corrected = 0xfffffffful;
-                                }
-                                DIAG(" %zu: 0x%08x -> %08x Parity: %s", z, batch->current_batch[z], corrected, calc_parity ? "good" : "bad");
+                            if (FAILED_UNLIKELY(_pager_pocsag_process_batch(pocsag, batch))) {
+                                DIAG("Failed to process batch -- likely a multi-bit error occurred.");
                             }
 
                             /* Switch to sync search state */
@@ -296,6 +432,7 @@ aresult_t pager_pocsag_on_pcm(struct pager_pocsag *pocsag, const int16_t *pcm_sa
                             pocsag->cur_state = PAGER_POCSAG_STATE_SEARCH;
                             pocsag->sample_skip = 0;
                             _pager_pocsag_baud_search_reset(pocsag);
+                            TSL_BUG_IF_FAILED(_pager_pocsag_message_decode_deliver(pocsag, &pocsag->decoder));
                         } else {
                             DIAG("SEARCH_SYNCWORD -> BATCH_RECEIVE");
                             pocsag->cur_state = PAGER_POCSAG_STATE_BATCH_RECEIVE;
