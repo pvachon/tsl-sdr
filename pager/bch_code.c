@@ -412,7 +412,7 @@ int bch_code_decode(struct bch_code *bch_code_data, uint32_t *precd)
  * data[] = coefficients of data polynomial, i(x)
  * bb[] = coefficients of redundancy polynomial ( x**(10) i(x) ) modulo g(x)
  */
-aresult_t bch_code_new(struct bch_code **pcode, int p[], int m, int n, int k, int t)
+aresult_t bch_code_new(struct bch_code **pcode, const int p[], int m, int n, int k, int t)
 {
     aresult_t ret = A_OK;
 

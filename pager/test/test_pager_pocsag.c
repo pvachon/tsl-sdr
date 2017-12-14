@@ -17,7 +17,8 @@ const int16_t *samples = NULL;
 static
 size_t nr_samples = 0;
 
-#define TEST_FILE_NAME "pocsag_hospital_38400_long.raw"
+//#define TEST_FILE_NAME "pocsag_hospital_38400_long.raw"
+#define TEST_FILE_NAME "pocsag_38400_test_512bps_hackrf.raw"
 
 static
 aresult_t test_pager_pocsag_setup(void)
@@ -63,7 +64,7 @@ aresult_t test_pager_pocsag_setup(void)
 
 done:
     if (FAILED(ret)) {
-        TEST_ERR("Make sure PAGER_TEST_DATA_DIR is set to point to where we can find pocsag_single_burst_25khz.raw");
+        TEST_ERR("Make sure PAGER_TEST_DATA_DIR is set to point to where we can find " TEST_FILE_NAME);
         if (NULL != samples) {
             TFREE(samples);
         }
@@ -95,6 +96,72 @@ aresult_t test_pager_pocsag_cleanup(void)
     return ret;
 }
 
+static const
+uint32_t _unpack_testi_7f[] = {
+    0x1FFFFE,
+    0x1FFFFE,
+    0x1FFFFE,
+    0x1FFFFE,
+
+    0x1FFFFE,
+    0x1FFFFE,
+    0x1FFFFE,
+    0x1FFFFE,
+
+    0x1FFFFE,
+    0x1FFFFE,
+    0x1FFFFE,
+    0x1FFFFE,
+
+    0x1FFFFE,
+    0x1FFFFE,
+};
+
+static
+aresult_t _pager_pocsag_unpack_batch_ascii(const uint32_t *batch_words, size_t batch_nr_words,
+        uint8_t *val, size_t max_val, size_t *pnr_val)
+{
+    aresult_t ret = A_OK;
+
+    size_t byte_off = 0;
+    size_t nr_bits = 0;
+    uint32_t acc = 0;
+
+    for (size_t i = 0; i < batch_nr_words; i++) {
+        acc |= ((batch_words[i] >> 1) & 0xfffffu) << nr_bits;
+        nr_bits += 20;
+        while (nr_bits >= 7) {
+            val[byte_off++] = acc & 0x7f;
+            if (max_val <= byte_off) {
+                ret = A_E_INVAL;
+                goto done;
+            }
+            nr_bits -= 7;
+        }
+    }
+
+    TEST_INF("There are %zu bits left", nr_bits);
+
+    *pnr_val = byte_off;
+
+done:
+    return ret;
+}
+
+TEST_DECLARE_UNIT(test_7b_unpack, pocsag)
+{
+    uint8_t unpacked[512];
+    size_t nr_unpacked;
+
+    TEST_ASSERT_OK(_pager_pocsag_unpack_batch_ascii(_unpack_testi_7f, sizeof(_unpack_testi_7f)/sizeof(uint32_t),
+                unpacked, sizeof(unpacked), &nr_unpacked));
+    TEST_ASSERT_EQUALS(nr_unpacked, 40);
+    for (size_t i = 0; i < nr_unpacked; i++) {
+        TEST_ASSERT_EQUALS(unpacked[i], 0x7f);
+    }
+
+    return A_OK;
+}
 
 static
 aresult_t _test_pocsag_on_message_simple_cb(
@@ -105,7 +172,7 @@ aresult_t _test_pocsag_on_message_simple_cb(
         size_t data_len,
         uint8_t function)
 {
-    fprintf(stderr, "POCSAG: ALN(%u): [%8u]: %s\n", (unsigned)function, capcode, data);
+    fprintf(stderr, "POCSAG%u: ALN(%u): [%8u]: %s\n", (unsigned)baud_rate, (unsigned)function, capcode, data);
     hexdump_dump_hex(data, data_len);
     return A_OK;
 }
@@ -119,7 +186,7 @@ aresult_t _test_pocsag_on_num_message_simple_cb(
         size_t data_len,
         uint8_t function)
 {
-    fprintf(stderr, "POCSAG: NUMi(%u): [%8u]: %s\n", function, capcode, data);
+    fprintf(stderr, "POCSAG%u: NUM(%u): [%8u]: %s\n", (unsigned)baud_rate, function, capcode, data);
     return A_OK;
 }
 

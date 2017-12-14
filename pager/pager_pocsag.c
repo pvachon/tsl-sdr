@@ -82,6 +82,7 @@ aresult_t _pager_pocsag_baud_on_sample(struct pager_pocsag *pocsag, struct pager
             DIAG("SEARCH -> SYNCHRONIZED: Initial Sync Found, skip = %u, matches = %u",
                     (unsigned)det->samples_per_bit, (unsigned)det->nr_eye_matches);
             pocsag->sample_skip = det->samples_per_bit;
+            pocsag->baud_rate = det->baud_rate;
             _pager_pocsag_batch_reset(&pocsag->batch);
             pocsag->batch.cur_sample_skip = det->nr_eye_matches/2;
             pocsag->cur_state = PAGER_POCSAG_STATE_SYNCHRONIZED;
@@ -109,10 +110,13 @@ void _pager_pocsag_baud_search_reset(struct pager_pocsag *pocsag)
 {
     _pager_pocsag_baud_reset(pocsag->baud_512);
     pocsag->baud_512->samples_per_bit = 75;
+    pocsag->baud_512->baud_rate = 512;
     _pager_pocsag_baud_reset(pocsag->baud_1200);
     pocsag->baud_1200->samples_per_bit = 32;
+    pocsag->baud_1200->baud_rate = 1200;
     _pager_pocsag_baud_reset(pocsag->baud_2400);
     pocsag->baud_2400->samples_per_bit = 16;
+    pocsag->baud_2400->baud_rate = 2400;
 }
 
 aresult_t pager_pocsag_new(struct pager_pocsag **ppocsag, uint32_t freq_hz,
@@ -122,7 +126,7 @@ aresult_t pager_pocsag_new(struct pager_pocsag **ppocsag, uint32_t freq_hz,
     aresult_t ret = A_OK;
 
     /* BCH Generator Polynomial */
-    int poly[6] = { 1, 0, 1, 0, 0, 1 };
+    static const int poly[6] = { 1, 0, 1, 0, 0, 1 };
     struct pager_pocsag *pocsag = NULL;
 
     TSL_ASSERT_ARG(NULL != ppocsag);
@@ -131,15 +135,21 @@ aresult_t pager_pocsag_new(struct pager_pocsag **ppocsag, uint32_t freq_hz,
         goto done;
     }
 
-    if (FAILED(ret = TACALLOC((void **)&pocsag->baud_512, 1, sizeof(struct pager_pocsag_baud_detect) + 75 * sizeof(uint32_t), SYS_CACHE_LINE_LENGTH))) {
+    if (FAILED(ret = TACALLOC((void **)&pocsag->baud_512, 1,
+                    sizeof(struct pager_pocsag_baud_detect) + 75 * sizeof(uint32_t), SYS_CACHE_LINE_LENGTH)))
+    {
         goto done;
     }
 
-    if (FAILED(ret = TACALLOC((void **)&pocsag->baud_1200, 1, sizeof(struct pager_pocsag_baud_detect) + 32 * sizeof(uint32_t), SYS_CACHE_LINE_LENGTH))) {
+    if (FAILED(ret = TACALLOC((void **)&pocsag->baud_1200, 1,
+                    sizeof(struct pager_pocsag_baud_detect) + 32 * sizeof(uint32_t), SYS_CACHE_LINE_LENGTH)))
+    {
         goto done;
     }
 
-    if (FAILED(ret = TACALLOC((void **)&pocsag->baud_2400, 1, sizeof(struct pager_pocsag_baud_detect) + 16 * sizeof(uint32_t), SYS_CACHE_LINE_LENGTH))) {
+    if (FAILED(ret = TACALLOC((void **)&pocsag->baud_2400, 1,
+                    sizeof(struct pager_pocsag_baud_detect) + 16 * sizeof(uint32_t), SYS_CACHE_LINE_LENGTH)))
+    {
         goto done;
     }
 
@@ -231,9 +241,9 @@ aresult_t _pager_pocsag_message_decode_deliver(struct pager_pocsag *pocsag, stru
     if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_INVALID) {
         decode->message[decode->next_byte] = '\0';
         if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_NUMERIC) {
-            TSL_BUG_IF_FAILED(pocsag->on_alpha(pocsag, 1200, decode->cap_code, decode->message, decode->next_byte, decode->function));
+            TSL_BUG_IF_FAILED(pocsag->on_alpha(pocsag, pocsag->baud_rate, decode->cap_code, decode->message, decode->next_byte, decode->function));
         } else {
-            TSL_BUG_IF_FAILED(pocsag->on_numeric(pocsag, 1200, decode->cap_code, decode->message, decode->next_byte, decode->function));
+            TSL_BUG_IF_FAILED(pocsag->on_numeric(pocsag, pocsag->baud_rate, decode->cap_code, decode->message, decode->next_byte, decode->function));
         }
     }
     _pager_pocsag_message_decode_reset(decode);
@@ -298,7 +308,7 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
             decode->function = (corrected >> 19) & 0x3;
             decode->cap_code = (((corrected >> 1) & ((1 << 18) - 1)) << 3) + ((z >> 1) & 0x7);
             DIAG("  ADDR: %u Function %u (raw = 0x%08x)", decode->cap_code, decode->function, corrected);
-            if (decode->function == 1 || decode->function == 2) {
+            if (decode->function == 1 || decode->function == 2 || decode->function == 3) {
                 decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_ALPHA;
             } else if (decode->function == 0) {
                 decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_NUMERIC;
@@ -306,7 +316,7 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
                 decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_INVALID;
             }
         } else {
-            uint32_t val = (corrected >> 1) & ((1 << 20) - 1);
+            uint32_t val = (corrected >> 1) & 0xfffffu;
             if (decode->data_word_valid_bits + 20 > 32) {
                 PANIC("ERROR: %zu valid bits, should be less than 7", decode->data_word_valid_bits);
             }
@@ -334,6 +344,12 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
                 DIAG("Unknown message type in message decoder, aborting.");
             }
         }
+    }
+
+    if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_INVALID) {
+        DIAG("Bits remaining: %zu", decode->data_word_valid_bits);
+        decode->message[decode->next_byte] = '\0';
+        DIAG("PARTIAL: CAPCODE: %u Message: [%s]", decode->cap_code, decode->message);
     }
 
 done:

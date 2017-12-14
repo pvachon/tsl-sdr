@@ -106,7 +106,12 @@ struct pager_pocsag_baud_detect {
     /**
      * The number of samples per bit, also the number of words in the 
      */
-    size_t samples_per_bit;
+    uint32_t samples_per_bit;
+
+    /**
+     * The baud rate
+     */
+    uint16_t baud_rate;
 
     /**
      * The current word being processed
@@ -116,7 +121,7 @@ struct pager_pocsag_baud_detect {
     /**
      * Number of samples in the eye that match
      */
-    size_t nr_eye_matches;
+    uint32_t nr_eye_matches;
 
     /**
      * Sync word eye detection
@@ -183,6 +188,12 @@ struct pager_pocsag {
      * The rate to skip samples at
      */
     uint16_t sample_skip;
+
+    /**
+     * The current baud rate, if any
+     */
+    uint16_t baud_rate;
+
     /**
      * Callback for handling the arrival of numeric messages
      */
