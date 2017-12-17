@@ -20,6 +20,7 @@
  *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 #include <pager/pager_flex.h>
+#include <pager/pager_pocsag.h>
 
 #include <filter/filter.h>
 #include <filter/sample_buf.h>
@@ -43,6 +44,14 @@
 #include <time.h>
 
 #define DEP_MSG(sev, sys, msg, ...) MESSAGE("DEPAGER", sev, sys, msg, ##__VA_ARGS__)
+
+enum depager_pager_type {
+    DEPAGER_PAGER_TYPE_FLEX = 0,
+    DEPAGER_PAGER_TYPE_POCSAG = 1,
+};
+
+static
+enum depager_pager_type _pager_type = DEPAGER_PAGER_TYPE_FLEX;
 
 static
 unsigned interpolate = 1;
@@ -75,6 +84,9 @@ static
 struct pager_flex *flex = NULL;
 
 static
+struct pager_pocsag *pocsag = NULL;
+
+static
 int sample_debug_fd = -1;
 
 static
@@ -88,9 +100,12 @@ void _usage(const char *appname)
 {
     DEP_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -d [sample_debug_file] -S [input sample rate] -f [pager chan freq] [-c] [-o output JSON file] [-b] [-i] [in_fifo]",
             appname);
-    DEP_MSG(SEV_INFO, "USAGE", "        -b      Enable DC blocking filter");
-    DEP_MSG(SEV_INFO, "USAGE", "        -c      Create JSON output file");
-    DEP_MSG(SEV_INFO, "USAGE", "        -i      Invert input sample stream");
+    DEP_MSG(SEV_INFO, "USAGE", "        -b        Enable DC blocking filter       ");
+    DEP_MSG(SEV_INFO, "USAGE", "        -c        Create JSON output file         ");
+    DEP_MSG(SEV_INFO, "USAGE", "        -i        Invert input sample stream      ");
+    DEP_MSG(SEV_INFO, "USAGE", "        -m [type] Specify pager protocol to use   ");
+    DEP_MSG(SEV_INFO, "USAGE", "           POCSAG - the POCSAG pager protocol     ");
+    DEP_MSG(SEV_INFO, "USAGE", "           FLEX   - Motorola FLEX pager protocol  ");
     exit(EXIT_SUCCESS);
 }
 
@@ -234,6 +249,33 @@ aresult_t _on_flex_siv_msg(
 }
 
 static
+aresult_t _on_pocsag_alnum_msg(
+        struct pager_pocsag *p,
+        uint16_t baud_rate,
+        uint32_t capcode,
+        const char *data,
+        size_t data_len,
+        uint8_t function)
+{
+    fprintf(stderr, "POCSAG%u: ALN(%u): [%8u]: %s\n", (unsigned)baud_rate, (unsigned)function, capcode, data);
+    return A_OK;
+}
+
+static
+aresult_t _on_pocsag_num_msg(
+        struct pager_pocsag *p,
+        uint16_t baud_rate,
+        uint32_t capcode,
+        const char *data,
+        size_t data_len,
+        uint8_t function)
+{
+    fprintf(stderr, "POCSAG%u: NUM(%u): [%8u]: %s\n", (unsigned)baud_rate, function, capcode, data);
+    return A_OK;
+}
+
+
+static
 void _set_options(int argc, char * const argv[])
 {
     int arg = -1;
@@ -243,7 +285,7 @@ void _set_options(int argc, char * const argv[])
     double *filter_coeffs_f = NULL;
     bool create_out = false;
 
-    while ((arg = getopt(argc, argv, "co:I:D:S:F:f:d:p:bih")) != -1) {
+    while ((arg = getopt(argc, argv, "co:I:D:S:F:f:d:p:m:bih")) != -1) {
         switch (arg) {
         case 'o':
             out_file_name = optarg;
@@ -276,6 +318,17 @@ void _set_options(int argc, char * const argv[])
                 int errnum = errno;
                 DEP_MSG(SEV_ERROR, "FAIL-DEBUG-FILE", "Failed to open debug output file %s: %s (%d)",
                         optarg, strerror(errnum), errnum);
+                exit(EXIT_FAILURE);
+            }
+            break;
+
+        case 'm':
+            if (!strncasecmp(optarg, "pocsag", 6)) {
+                _pager_type = DEPAGER_PAGER_TYPE_POCSAG;
+            } else if (!strncasecmp(optarg, "flex", 4)) {
+                _pager_type = DEPAGER_PAGER_TYPE_FLEX;
+            } else {
+                DEP_MSG(SEV_ERROR, "UNKNOWN-PAGER-TYPE", "Unknown pager type specified: %s", optarg);
                 exit(EXIT_FAILURE);
             }
             break;
@@ -470,7 +523,11 @@ aresult_t process_samples(void)
         }
 
         /* Process with the pager object */
-        TSL_BUG_IF_FAILED(pager_flex_on_pcm(flex, output_buf, new_samples));
+        if (_pager_type == DEPAGER_PAGER_TYPE_FLEX) {
+            TSL_BUG_IF_FAILED(pager_flex_on_pcm(flex, output_buf, new_samples));
+        } else {
+            TSL_BUG_IF_FAILED(pager_pocsag_on_pcm(pocsag, output_buf, new_samples));
+        }
 
         /* If a sample debug file was specified, write to the sample debug file */
         if (-1 != sample_debug_fd) {
@@ -496,8 +553,18 @@ int main(int argc, char * const argv[])
     TSL_BUG_IF_FAILED(app_sigint_catch(NULL));
 
     _set_options(argc, argv);
+
+    /* Create the polyphase resampling filter */
     TSL_BUG_IF_FAILED(polyphase_fir_new(&pfir, nr_filter_coeffs, filter_coeffs, interpolate, decimate));
-    TSL_BUG_IF_FAILED(pager_flex_new(&flex, pager_freq, _on_flex_alnum_msg, _on_flex_num_msg, _on_flex_siv_msg));
+
+    /* Set up the appropriate pager protocol decoder */
+    if (_pager_type == DEPAGER_PAGER_TYPE_FLEX) {
+        DEP_MSG(SEV_INFO, "PROTOCOL", "Using the Motorola FLEX pager protocol.");
+        TSL_BUG_IF_FAILED(pager_flex_new(&flex, pager_freq, _on_flex_alnum_msg, _on_flex_num_msg, _on_flex_siv_msg));
+    } else if (_pager_type == DEPAGER_PAGER_TYPE_POCSAG) {
+        DEP_MSG(SEV_INFO, "PROTOCOL", "Using the POCSAG Pager Protocol.");
+        TSL_BUG_IF_FAILED(pager_pocsag_new(&pocsag, pager_freq, _on_pocsag_alnum_msg, _on_pocsag_num_msg));
+    }
 
     DEP_MSG(SEV_INFO, "STARTING", "Starting pager message decoder on frequency %u Hz.", pager_freq);
 
@@ -513,8 +580,18 @@ done:
         fclose(out_file);
     }
 
-    pager_flex_delete(&flex);
-    polyphase_fir_delete(&pfir);
+    if (NULL != flex) {
+        pager_flex_delete(&flex);
+    }
+
+    if (NULL != pocsag) {
+        pager_pocsag_delete(&pocsag);
+    }
+
+    if (NULL != pfir) {
+        polyphase_fir_delete(&pfir);
+    }
+
     return ret;
 }
 
