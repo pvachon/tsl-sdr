@@ -148,6 +148,11 @@ void _depager_put_alnum_char(FILE *fp, char ch)
     case '\t':
         fprintf(fp, "\\t");
         break;
+    case 0x03:
+    case 0x04:
+    case 0x17:
+        fprintf(fp, " ");
+        break;
     default:
         if (isprint(ch)) {
             fprintf(fp, "%c", ch);
@@ -257,7 +262,22 @@ aresult_t _on_pocsag_alnum_msg(
         size_t data_len,
         uint8_t function)
 {
-    fprintf(stderr, "POCSAG%u: ALN(%u): [%8u]: %s\n", (unsigned)baud_rate, (unsigned)function, capcode, data);
+    /* TODO: this sucks, should move it closer to the capture clock */
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+
+    fprintf(out_file, "{\"proto\":\"pocsag\",\"type\":\"alpha\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+            "\"baud\":%i,\"capCode\":%u,\"function\":%u,\"message\":\"",
+            gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+            baud_rate, capcode, (unsigned)function);
+
+    for (size_t i = 0; i < data_len; i++) {
+        _depager_put_alnum_char(out_file, data[i]);
+    }
+
+    fprintf(out_file, "\"}\n");
+    fflush(out_file);
+
     return A_OK;
 }
 
@@ -270,7 +290,22 @@ aresult_t _on_pocsag_num_msg(
         size_t data_len,
         uint8_t function)
 {
-    fprintf(stderr, "POCSAG%u: NUM(%u): [%8u]: %s\n", (unsigned)baud_rate, function, capcode, data);
+    /* TODO: this sucks, should move it closer to the capture clock */
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+
+    fprintf(out_file, "{\"proto\":\"pocsag\",\"type\":\"numeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+            "\"baud\":%i,\"capCode\":%u,\"function\":%u,\"message\":\"",
+            gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+            baud_rate, capcode, (unsigned)function);
+
+    for (size_t i = 0; i < data_len; i++) {
+        _depager_put_alnum_char(out_file, data[i]);
+    }
+
+    fprintf(out_file, "\"}\n");
+    fflush(out_file);
+
     return A_OK;
 }
 
@@ -563,7 +598,7 @@ int main(int argc, char * const argv[])
         TSL_BUG_IF_FAILED(pager_flex_new(&flex, pager_freq, _on_flex_alnum_msg, _on_flex_num_msg, _on_flex_siv_msg));
     } else if (_pager_type == DEPAGER_PAGER_TYPE_POCSAG) {
         DEP_MSG(SEV_INFO, "PROTOCOL", "Using the POCSAG Pager Protocol.");
-        TSL_BUG_IF_FAILED(pager_pocsag_new(&pocsag, pager_freq, _on_pocsag_alnum_msg, _on_pocsag_num_msg));
+        TSL_BUG_IF_FAILED(pager_pocsag_new(&pocsag, pager_freq, _on_pocsag_num_msg, _on_pocsag_alnum_msg));
     }
 
     DEP_MSG(SEV_INFO, "STARTING", "Starting pager message decoder on frequency %u Hz.", pager_freq);

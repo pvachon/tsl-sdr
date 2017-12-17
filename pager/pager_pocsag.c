@@ -358,7 +358,7 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
             decode->function = (corrected >> 19) & 0x3;
             decode->cap_code = (((corrected >> 1) & ((1 << 18) - 1)) << 3) + ((z >> 1) & 0x7);
             DIAG("  ADDR: %u Function %u (raw = 0x%08x)", decode->cap_code, decode->function, corrected);
-        } else {
+        } else if (decode->msg_type == PAGER_POCSAG_MESSAGE_TYPE_UNKNOWN) {
             uint32_t val = (corrected >> 1) & 0xfffffu;
 
             /* Fill in the alphanumeric and numeric registers */
@@ -380,7 +380,7 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
                 char c = decode->data_word_alpha & 0x7f;
                 decode->message_alpha[decode->next_byte_alpha++] = c;
 
-                /* Really bad heuristic */
+                /* Really bad heuristic - if the character is printable or \r or \n, give us points */
                 if (isprint(c) || c == 0xa || c == 0xd) {
                     if (false == decode->seen_nonprint) {
                         decode->score_alpha++;
@@ -410,6 +410,7 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
         }
     }
 
+#ifdef _PAGER_POCSAG_DEBUG
     if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_NONE) {
         DIAG("Bits remaining: Alpha: %zu Numeric: %zu", decode->data_word_alpha_valid_bits,
                 decode->data_word_numeric_valid_bits);
@@ -418,6 +419,7 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
         DIAG("PARTIAL: CAPCODE: %u Message Alpha [%s]", decode->cap_code, decode->message_alpha);
         DIAG("PARTIAL: CAPCODE: %u Message Numeric [%s]", decode->cap_code, decode->message_numeric);
     }
+#endif /* defined(_PAGER_POCSAG_DEBUG) */
 
 done:
     return ret;
