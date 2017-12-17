@@ -1,0 +1,23 @@
+{
+  "device" : {
+    "type" : "rtlsdr",
+    "deviceIndex" : 0,
+    "dBGainLNA" : 37.2
+  },
+  "sampleRateHz" : 1200000,
+  "centerFreqHz" : 152500000,
+  "nrSampBufs" : 128,
+  "decimationFactor" : 25,
+  "channels" : [
+    {
+      "outFifo" : "/home/pvachon/ch0.out",
+      "dBGain" : 4.0,
+      "chanCenterFreq" : 152180000
+    },
+    {
+      "outFifo" : "/home/pvachon/ch1.out",
+      "dbGain" : 1.5,
+      "chanCenterFreq" : 152008000
+    }
+  ]
+}
