@@ -54,9 +54,10 @@ enum pager_pocsag_state {
 #define POCSAG_PAGER_MAX_NUM_LEN        75
 
 enum pager_pocsag_message_type {
-    PAGER_POCSAG_MESSAGE_TYPE_INVALID = 0,
-    PAGER_POCSAG_MESSAGE_TYPE_ALPHA = 1,
-    PAGER_POCSAG_MESSAGE_TYPE_NUMERIC = 2,
+    PAGER_POCSAG_MESSAGE_TYPE_NONE = 0,
+    PAGER_POCSAG_MESSAGE_TYPE_UNKNOWN = 1,
+    PAGER_POCSAG_MESSAGE_TYPE_ALPHA = 2,
+    PAGER_POCSAG_MESSAGE_TYPE_NUMERIC = 3,
 };
 
 /**
@@ -64,14 +65,34 @@ enum pager_pocsag_message_type {
  */
 struct pager_pocsag_message_decode {
     /**
-     * The currently decoded message
+     * The currently decoded message, as alphanumeric
      */
-    char message[512];
+    char message_alpha[512];
 
     /**
-     * The next message byte to be written
+     * The next message alphanumeric byte to be written
      */
-    size_t next_byte;
+    size_t next_byte_alpha;
+
+    /**
+     * Score for the alpha message
+     */
+    int score_alpha;
+
+    /**
+     * We've seen non-printables, so we need to penalize
+     */
+    bool seen_nonprint;
+
+    /**
+     * The current decoded message, as numeric
+     */
+    char message_numeric[512];
+
+    /**
+     * The next message numeric byte to be written
+     */
+    size_t next_byte_numeric;
 
     /**
      * The CAPcode this message is destined for
@@ -79,19 +100,34 @@ struct pager_pocsag_message_decode {
     uint32_t cap_code;
 
     /**
-     * Active data word
+     * Active data word, alphanumeric
      */
-    uint32_t data_word;
+    uint32_t data_word_alpha;
 
     /**
      * Number of bits in the active data word
      */
-    size_t data_word_valid_bits;
+    size_t data_word_alpha_valid_bits;
+
+    /**
+     * Active data word, numeric
+     */
+    uint32_t data_word_numeric;
+
+    /**
+     * Number of bits in the active data word, numeric
+     */
+    size_t data_word_numeric_valid_bits;
 
     /**
      * Function value recorded in address word
      */
     uint8_t function;
+
+    /**
+     * Set to true if this is an early termination
+     */
+    bool early_termination;
 
     /**
      * The message type

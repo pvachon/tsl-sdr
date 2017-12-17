@@ -31,13 +31,33 @@
 
 /* Remove after testing is done ... */
 #include <tsl/panic.h>
+#include <tsl/hexdump.h>
 
 #include <string.h>
+#include <ctype.h>
 
 static
 bool __pager_pocsag_check_sync_word(uint32_t word)
 {
     return (__builtin_popcount(word ^ POCSAG_SYNC_CODEWORD) <= 4);
+}
+
+static
+void _pager_pocsag_message_decode_reset(struct pager_pocsag_message_decode *decode)
+{
+    TSL_BUG_ON(NULL == decode);
+
+    decode->data_word_numeric = 0;
+    decode->data_word_numeric_valid_bits = 0;
+    decode->next_byte_numeric = 0;
+    decode->data_word_alpha = 0;
+    decode->data_word_alpha_valid_bits = 0;
+    decode->next_byte_alpha = 0;
+    decode->seen_nonprint = false;
+    decode->score_alpha = 0;
+    decode->early_termination = 0;
+    decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_NONE;
+    decode->function = 0;
 }
 
 static
@@ -159,6 +179,7 @@ aresult_t pager_pocsag_new(struct pager_pocsag **ppocsag, uint32_t freq_hz,
     pocsag->on_alpha = on_alpha;
 
     _pager_pocsag_baud_search_reset(pocsag);
+    _pager_pocsag_message_decode_reset(&pocsag->decoder);
 
     *ppocsag = pocsag;
 
@@ -215,22 +236,6 @@ aresult_t pager_pocsag_delete(struct pager_pocsag **ppocsag)
 }
 
 static
-aresult_t _pager_pocsag_message_decode_reset(struct pager_pocsag_message_decode *decode)
-{
-    aresult_t ret = A_OK;
-
-    TSL_ASSERT_ARG_DEBUG(NULL != decode);
-
-    decode->data_word = 0;
-    decode->next_byte = 0;
-    decode->data_word_valid_bits = 0;
-    decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_INVALID;
-    decode->function = 0;
-
-    return ret;
-}
-
-static
 aresult_t _pager_pocsag_message_decode_deliver(struct pager_pocsag *pocsag, struct pager_pocsag_message_decode *decode)
 {
     aresult_t ret = A_OK;
@@ -238,16 +243,53 @@ aresult_t _pager_pocsag_message_decode_deliver(struct pager_pocsag *pocsag, stru
     TSL_ASSERT_ARG_DEBUG(NULL != pocsag);
     TSL_ASSERT_ARG_DEBUG(NULL != decode);
 
-    if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_INVALID) {
-        decode->message[decode->next_byte] = '\0';
+    if (PAGER_POCSAG_MESSAGE_TYPE_NONE == decode->msg_type) {
+        /* Skip, there's nothing to deliver */
+        goto done;
+    }
+
+    if (decode->next_byte_alpha != 0) {
+        char last_c = decode->message_alpha[decode->next_byte_alpha - 1];
+        /* Favour messages that ended with a traditional "end of message" character */
+        if (last_c == 0x4 || last_c == 0x3 || last_c == 0x0 || last_c == 0x17) {
+            decode->score_alpha = 1;
+        }
+    }
+
+    /* Odds are that we won't see a numeric message this long */
+    if (decode->next_byte_numeric > 40) {
+        decode->score_alpha = 1;
+    }
+
+    if (decode->score_alpha > 0) {
+        decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_ALPHA;
+    } else {
+        decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_NUMERIC;
+    }
+
+    if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_UNKNOWN) {
         if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_NUMERIC) {
-            TSL_BUG_IF_FAILED(pocsag->on_alpha(pocsag, pocsag->baud_rate, decode->cap_code, decode->message, decode->next_byte, decode->function));
+#ifdef _PAGER_POCSAG_DEBUG
+            decode->message_numeric[decode->next_byte_numeric] = '\0';
+            DIAG("If this was numeric: [%s]", decode->message_numeric);
+#endif /* defined(_PAGER_POCSAG_DEBUG) */
+            decode->message_alpha[decode->next_byte_alpha] = '\0';
+            TSL_BUG_IF_FAILED(pocsag->on_alpha(pocsag, pocsag->baud_rate, decode->cap_code,
+                        decode->message_alpha, decode->next_byte_alpha, decode->function));
         } else {
-            TSL_BUG_IF_FAILED(pocsag->on_numeric(pocsag, pocsag->baud_rate, decode->cap_code, decode->message, decode->next_byte, decode->function));
+#ifdef _PAGER_POCSAG_DEBUG
+            decode->message_alpha[decode->next_byte_alpha] = '\0';
+            DIAG("If this was alpha: [%s]", decode->message_alpha);
+            hexdump_dump_hex(decode->message_alpha, decode->next_byte_alpha);
+#endif /* defined(_PAGER_POCSAG_DEBUG) */
+            decode->message_numeric[decode->next_byte_numeric] = '\0';
+            TSL_BUG_IF_FAILED(pocsag->on_numeric(pocsag, pocsag->baud_rate, decode->cap_code,
+                        decode->message_numeric, decode->next_byte_numeric, decode->function));
         }
     }
     _pager_pocsag_message_decode_reset(decode);
 
+done:
     return ret;
 }
 
@@ -290,66 +332,91 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
             /* We're stuck. POCSAG is too fragile to try to continue decoding, so we have to
              * discard the (rest) of the batch.
              */
-            DIAG("Abandoning batch, too many uncorrectable errors.");
-            TSL_BUG_IF_FAILED(_pager_pocsag_message_decode_deliver(pocsag, decode));
+            if (PAGER_POCSAG_MESSAGE_TYPE_NONE != decode->msg_type) {
+                DIAG("Abandoning batch, too many uncorrectable errors.");
+                decode->early_termination = true;
+                TSL_BUG_IF_FAILED(_pager_pocsag_message_decode_deliver(pocsag, decode));
+            }
             ret = A_E_INVAL;
             goto done;
         }
 
         if (corrected == POCSAG_IDLE_CODEWORD) {
-            TSL_BUG_IF_FAILED(_pager_pocsag_message_decode_deliver(pocsag, decode));
-            /* Skip idle words */
+            /* A message is considered delivered once we see the idle codeword */
+            if (PAGER_POCSAG_MESSAGE_TYPE_NONE != decode->msg_type) {
+                DIAG("Got idle code word, shipping it off...");
+                TSL_BUG_IF_FAILED(_pager_pocsag_message_decode_deliver(pocsag, decode));
+            }
             continue;
         }
 
         if ((corrected & 1) == 0) {
             /* Deliver any pending message */
+            DIAG("New address word detected, shipping the existing message off");
             TSL_BUG_IF_FAILED(_pager_pocsag_message_decode_deliver(pocsag, decode));
+            decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_UNKNOWN;
             decode->function = (corrected >> 19) & 0x3;
             decode->cap_code = (((corrected >> 1) & ((1 << 18) - 1)) << 3) + ((z >> 1) & 0x7);
             DIAG("  ADDR: %u Function %u (raw = 0x%08x)", decode->cap_code, decode->function, corrected);
-            if (decode->function == 1 || decode->function == 2 || decode->function == 3) {
-                decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_ALPHA;
-            } else if (decode->function == 0) {
-                decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_NUMERIC;
-            } else {
-                decode->msg_type = PAGER_POCSAG_MESSAGE_TYPE_INVALID;
-            }
         } else {
             uint32_t val = (corrected >> 1) & 0xfffffu;
-            if (decode->data_word_valid_bits + 20 > 32) {
-                PANIC("ERROR: %zu valid bits, should be less than 7", decode->data_word_valid_bits);
-            }
-            decode->data_word |= val << decode->data_word_valid_bits;
-            decode->data_word_valid_bits += 20;
 
-            switch (decode->msg_type) {
-            case PAGER_POCSAG_MESSAGE_TYPE_ALPHA:
-                while (decode->data_word_valid_bits >= 7) {
-                    decode->message[decode->next_byte++] = decode->data_word & 0x7f;
-                    decode->data_word >>= 7;
-                    decode->data_word_valid_bits -= 7;
+            /* Fill in the alphanumeric and numeric registers */
+            if (decode->data_word_alpha_valid_bits + 20 > 32) {
+                PANIC("ERROR: Alpha word has %zu valid bits, should be less than 7",
+                        decode->data_word_alpha_valid_bits);
+            }
+            decode->data_word_alpha |= val << decode->data_word_alpha_valid_bits;
+            decode->data_word_alpha_valid_bits += 20;
+
+            if (decode->data_word_numeric_valid_bits + 20 > 32) {
+                PANIC("ERROR: Numeric word has %zu valid bits, should be less than 4",
+                        decode->data_word_alpha_valid_bits);
+            }
+            decode->data_word_numeric |= val << decode->data_word_numeric_valid_bits;
+            decode->data_word_numeric_valid_bits += 20;
+
+            while (decode->data_word_alpha_valid_bits >= 7) {
+                char c = decode->data_word_alpha & 0x7f;
+                decode->message_alpha[decode->next_byte_alpha++] = c;
+
+                /* Really bad heuristic */
+                if (isprint(c) || c == 0xa || c == 0xd) {
+                    if (false == decode->seen_nonprint) {
+                        decode->score_alpha++;
+                    }
+                } else {
+                    /* Flag we have a non-printable */
+                    decode->seen_nonprint = true;
+                    /* Don't do anything for ETX, EOT, ETB and NUL since they could mean we're at the end
+                     * of the message
+                     */
+                    if (0x03 != c && 0x04 != c && 0x17 != c && 0x0 != c) {
+                        /* But for other non-printables, penalize away */
+                        decode->score_alpha -= 10;
+                    }
                 }
-                break;
-            case PAGER_POCSAG_MESSAGE_TYPE_NUMERIC:
-                while (decode->data_word_valid_bits >= 4) {
-                    uint8_t bcd = decode->data_word & 0xf;
-                    decode->message[decode->next_byte++] = _pager_pocsag_numeric_message_charmap[bcd];
-                    decode->data_word >>= 4;
-                    decode->data_word_valid_bits -= 4;
-                }
-                break;
-            default:
-                decode->data_word_valid_bits = 0;
-                DIAG("Unknown message type in message decoder, aborting.");
+
+                decode->data_word_alpha >>= 7;
+                decode->data_word_alpha_valid_bits -= 7;
+            }
+
+            while (decode->data_word_numeric_valid_bits >= 4 && decode->next_byte_numeric < 511) {
+                uint8_t bcd = decode->data_word_numeric & 0xf;
+                decode->message_numeric[decode->next_byte_numeric++] = _pager_pocsag_numeric_message_charmap[bcd];
+                decode->data_word_numeric >>= 4;
+                decode->data_word_numeric_valid_bits -= 4;
             }
         }
     }
 
-    if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_INVALID) {
-        DIAG("Bits remaining: %zu", decode->data_word_valid_bits);
-        decode->message[decode->next_byte] = '\0';
-        DIAG("PARTIAL: CAPCODE: %u Message: [%s]", decode->cap_code, decode->message);
+    if (decode->msg_type != PAGER_POCSAG_MESSAGE_TYPE_NONE) {
+        DIAG("Bits remaining: Alpha: %zu Numeric: %zu", decode->data_word_alpha_valid_bits,
+                decode->data_word_numeric_valid_bits);
+        decode->message_alpha[decode->next_byte_alpha] = '\0';
+        decode->message_numeric[decode->next_byte_numeric] = '\0';
+        DIAG("PARTIAL: CAPCODE: %u Message Alpha [%s]", decode->cap_code, decode->message_alpha);
+        DIAG("PARTIAL: CAPCODE: %u Message Numeric [%s]", decode->cap_code, decode->message_numeric);
     }
 
 done:
