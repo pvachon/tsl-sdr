@@ -369,13 +369,6 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
             decode->data_word_alpha |= val << decode->data_word_alpha_valid_bits;
             decode->data_word_alpha_valid_bits += 20;
 
-            if (decode->data_word_numeric_valid_bits + 20 > 32) {
-                PANIC("ERROR: Numeric word has %zu valid bits, should be less than 4",
-                        decode->data_word_alpha_valid_bits);
-            }
-            decode->data_word_numeric |= val << decode->data_word_numeric_valid_bits;
-            decode->data_word_numeric_valid_bits += 20;
-
             while (decode->data_word_alpha_valid_bits >= 7) {
                 char c = decode->data_word_alpha & 0x7f;
                 decode->message_alpha[decode->next_byte_alpha++] = c;
@@ -401,11 +394,20 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
                 decode->data_word_alpha_valid_bits -= 7;
             }
 
-            while (decode->data_word_numeric_valid_bits >= 4 && decode->next_byte_numeric < 511) {
-                uint8_t bcd = decode->data_word_numeric & 0xf;
-                decode->message_numeric[decode->next_byte_numeric++] = _pager_pocsag_numeric_message_charmap[bcd];
-                decode->data_word_numeric >>= 4;
-                decode->data_word_numeric_valid_bits -= 4;
+            if (decode->next_byte_numeric < 511) {
+                if ((decode->data_word_numeric_valid_bits + 20 > 32) && decode->next_byte_numeric < 511) {
+                    PANIC("ERROR: Numeric word has %zu valid bits, should be less than 4",
+                            decode->data_word_alpha_valid_bits);
+                }
+                decode->data_word_numeric |= val << decode->data_word_numeric_valid_bits;
+                decode->data_word_numeric_valid_bits += 20;
+
+                while (decode->data_word_numeric_valid_bits >= 4 && decode->next_byte_numeric < 511) {
+                    uint8_t bcd = decode->data_word_numeric & 0xf;
+                    decode->message_numeric[decode->next_byte_numeric++] = _pager_pocsag_numeric_message_charmap[bcd];
+                    decode->data_word_numeric >>= 4;
+                    decode->data_word_numeric_valid_bits -= 4;
+                }
             }
         }
     }
