@@ -266,7 +266,7 @@ aresult_t _on_pocsag_alnum_msg(
     time_t now = time(NULL);
     struct tm *gmt = gmtime(&now);
 
-    fprintf(out_file, "{\"proto\":\"pocsag\",\"type\":\"alpha\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+    fprintf(out_file, "{\"proto\":\"pocsag\",\"type\":\"alphanumeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
             "\"baud\":%i,\"capCode\":%u,\"function\":%u,\"message\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             baud_rate, capcode, (unsigned)function);
