@@ -123,11 +123,13 @@ aresult_t app_cpufeatures_check_at_init(void)
         CPU_MSG(SEV_FATAL, "MISSING-CPUID-FEATURE", "This application requires SSE 4.2 be present and enabled.");
     }
 
+#ifdef _TSL_NEED_AVX
     TSL_BUG_IF_FAILED(__cpuid_check_feature(CPUID_FEATURE_AVX, &feature));
     result &= feature;
     if (false == feature) {
         CPU_MSG(SEV_FATAL, "MISSING-CPUID-FEATURE", "This application requires AVX be present and enabled.");
     }
+#endif
 
     TSL_BUG_IF_FAILED(__cpuid_check_feature(CPUID_FEATURE_POPCNT, &feature));
     result &= feature;
