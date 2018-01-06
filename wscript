@@ -339,6 +339,20 @@ def build(bld):
 		name     = 'test_pager',
 	)
 
+	# AIS
+	bld.stlib(
+		source   = bld.path.ant_glob('ais/*.c'),
+		use      = ['tsl'],
+		target   = os.path.join(libPath, 'ais'),
+		name     = 'ais',
+	)
+	bld.program(
+		source   = bld.path.ant_glob('ais/test/*.c'),
+		use      = ['ais', 'config', 'test', 'tsl'],
+		target   = os.path.join(testPath, 'test_ais'),
+		name     = 'test_ais',
+	)
+
 	#test
 	bld.stlib(
 		source   = bld.path.ant_glob('test/*.c'),
