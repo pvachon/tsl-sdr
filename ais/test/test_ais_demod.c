@@ -40,6 +40,8 @@ aresult_t test_ais_demod_setup(void)
 
     TSL_BUG_IF_FAILED(tasprintf(&file_path, "%s/%s", test_data_dir, TEST_FILE_NAME));
 
+    TEST_INF("Attempting to open AIS test data from file '%s'", file_path);
+
     if (NULL == (fp = fopen(file_path, "r"))) {
         TEST_ERR("Failed to open file %s, aborting.", file_path);
         ret = A_E_INVAL;
@@ -97,8 +99,57 @@ aresult_t test_ais_demod_cleanup(void)
 }
 
 static
+char _test_to_ascii_armor(uint8_t in)
+{
+    if (in <= 39) {
+        return in + 48;
+    } else {
+        return in - 40 + 96;
+    }
+}
+
+static
 aresult_t _test_on_message_cb(struct ais_demod *demod, const uint8_t *packet, bool fcs_valid)
 {
+    uint8_t msg_id = 0,
+            offs = 0;
+    uint32_t mmsi = 0;
+    uint8_t msg_ascii_6[168/6];
+
+    memset(msg_ascii_6, 0, sizeof(msg_ascii_6));
+
+    for (size_t i = 0; i < sizeof(msg_ascii_6); i += 4) {
+        uint32_t accum = 0;
+        for (size_t j = offs; j < offs + 3; j++) {
+            accum <<= 8;
+            accum |= packet[j];
+        }
+        offs += 3;
+        for (size_t j = 0; j < 4; j++) {
+            msg_ascii_6[i + j] = (accum >> ((3 - j) * 6)) & 0x3f;
+        }
+    }
+
+    printf("Ascii Armored version: ");
+    for (size_t i = 0; i < sizeof(msg_ascii_6); i++) {
+        printf("%c", _test_to_ascii_armor(msg_ascii_6[i]));
+    }
+    printf("\n");
+
+    msg_id = msg_ascii_6[0];
+
+    /* MMSI is 32 bits long */
+    for (size_t i = 0; i < 5; i++) {
+        mmsi <<= 6;
+        mmsi |= msg_ascii_6[1 + i] & 0x3f;
+    }
+
+    mmsi <<= 2;
+    mmsi |= (msg_ascii_6[6] >> 4) & 0x3;
+
+    printf("MsgId: %02u MMSI: %8u\n", msg_id, mmsi);
+
+    hexdump_dump_hex(msg_ascii_6, sizeof(msg_ascii_6));
     hexdump_dump_hex(packet, 168/8);
     return A_OK;
 }
