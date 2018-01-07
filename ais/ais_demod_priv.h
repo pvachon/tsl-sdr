@@ -94,6 +94,7 @@ struct ais_demod {
     ais_demod_on_message_callback_func_t on_msg_cb;
     uint32_t freq;
     size_t sample_skip;
+    size_t crc_rejects;
 };
 
 #define AIS_MSG(sev, sys, msg, ...)     MESSAGE("AIS", sev, sys, msg, ##__VA_ARGS__)

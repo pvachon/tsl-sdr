@@ -10,6 +10,25 @@
 #include <string.h>
 
 static
+uint16_t _ais_crc16(const uint8_t *data, size_t len)
+{
+    uint16_t crc = 0xffffu;
+
+    for (size_t i = 0; i < len; i++) {
+        crc ^= ((uint16_t)data[i] << 8);
+        for (size_t j = 0; j < 8; j++) {
+            if ((crc & 0x8000) == 0x8000) {
+                crc = (crc << 1) ^ 0x1021;
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+
+    return ~crc;
+}
+
+static
 void _ais_demod_detect_reset(struct ais_demod_detect *detect)
 {
     memset(detect->preambles, 0, sizeof(detect->preambles));
@@ -109,8 +128,8 @@ void _ais_demod_detect_handle_sample(struct ais_demod *demod, int16_t sample)
     }
 
     if (nr_match >= 3) {
-        /* We have a packet */
         DIAG("SEARCH_SYNC -> RECEIVING (%d matches)", (int)nr_match);
+
         demod->state = AIS_DEMOD_STATE_RECEIVING;
         demod->sample_skip = 2;
         _ais_demod_rx_reset(&demod->packet_rx);
@@ -140,7 +159,7 @@ void _ais_demod_packet_rx_sample(struct ais_demod *demod, int16_t sample)
     rx->last_sample = raw;
 
     if (rx->nr_ones < 5) {
-        rx->packet[rx->current_bit / 8] |= bit << (rx->current_bit % 8);
+        rx->packet[rx->current_bit / 8] |= bit << (7 - (rx->current_bit % 8));
         rx->current_bit++;
     } else {
         DIAG("Stuffed bit removed (would have been %u)", bit);
@@ -153,8 +172,10 @@ void _ais_demod_packet_rx_sample(struct ais_demod *demod, int16_t sample)
     }
 
     if (AIS_PACKET_DATA_BITS + AIS_PACKET_FCS_BITS == rx->current_bit) {
+        /* We have a packet */
+        uint16_t crc = _ais_crc16(rx->packet, AIS_PACKET_DATA_BITS/8);
         hexdump_dump_hex(rx->packet, (AIS_PACKET_DATA_BITS + AIS_PACKET_FCS_BITS)/8);
-        DIAG("RECEIVING -> SEARCH_SYNC");
+        DIAG("RECEIVING -> SEARCH_SYNC (crc16 = %04x)", crc);
         demod->state = AIS_DEMOD_STATE_SEARCH_SYNC;
         demod->sample_skip = 0;
         _ais_demod_detect_reset(&demod->detector);
@@ -177,7 +198,7 @@ aresult_t ais_demod_on_pcm(struct ais_demod *demod, const int16_t *samples, size
                 _ais_demod_detect_handle_sample(demod, samples[i]);
                 if (demod->state == AIS_DEMOD_STATE_RECEIVING) {
                     /* Preamble was found, break. */
-                    fprintf(stderr, "   %zu, %d       %% last preamble bit\n", i, samples[i]);
+                    //fprintf(stderr, "   %zu, %d       %% last preamble bit\n", i, samples[i]);
                     cur_sample = i + 1;
                     break;
                 }
@@ -185,7 +206,7 @@ aresult_t ais_demod_on_pcm(struct ais_demod *demod, const int16_t *samples, size
         } else if (demod->state == AIS_DEMOD_STATE_RECEIVING) {
             for (size_t i = cur_sample; i < nr_samples; i++, cur_sample++) {
                 if ((demod->sample_skip++ % AIS_DECIMATION_RATE) == 0) {
-                    fprintf(stderr, "  %zu, %d %% skip = %zu\n", i, samples[i], demod->sample_skip - 1);
+                    //fprintf(stderr, "  %zu, %d %% skip = %zu\n", i, samples[i], demod->sample_skip - 1);
                     _ais_demod_packet_rx_sample(demod, samples[i]);
                     if (demod->state == AIS_DEMOD_STATE_SEARCH_SYNC) {
                         cur_sample = i + 1;
