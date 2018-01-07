@@ -5,7 +5,6 @@
 #include <tsl/diag.h>
 #include <tsl/errors.h>
 #include <tsl/assert.h>
-#include <tsl/hexdump.h>
 
 #include <string.h>
 
@@ -26,6 +25,12 @@ uint16_t _ais_crc16(const uint8_t *data, size_t len)
     }
 
     return ~crc;
+}
+
+static
+bool _ais_demod_compare(uint32_t x, uint32_t y, unsigned diff)
+{
+    return __builtin_popcountll(x ^ y) <= diff;
 }
 
 static
@@ -121,8 +126,8 @@ void _ais_demod_detect_handle_sample(struct ais_demod *demod, int16_t sample)
     detector->preambles[detector->next_field] |= !(last_bit ^ sample_slice);
 
     for (size_t i = 0; i < AIS_DECIMATION_RATE; i++) {
-        if (detector->preambles[i] == 0x5555557eul) {
-            DIAG("   Preamble [%zu]: 0x%08x", i, detector->preambles[i]);
+        if (_ais_demod_compare(detector->preambles[i], 0x5555557eul, 2)) {
+            //DIAG("   Preamble [%zu]: 0x%08x", i, detector->preambles[i]);
             nr_match++;
         }
     }
@@ -161,8 +166,6 @@ void _ais_demod_packet_rx_sample(struct ais_demod *demod, int16_t sample)
     if (rx->nr_ones < 5) {
         rx->packet[rx->current_bit / 8] |= bit << (7 - (rx->current_bit % 8));
         rx->current_bit++;
-    } else {
-        DIAG("Stuffed bit removed (would have been %u)", bit);
     }
 
     if (0 == bit) {
@@ -173,9 +176,14 @@ void _ais_demod_packet_rx_sample(struct ais_demod *demod, int16_t sample)
 
     if (AIS_PACKET_DATA_BITS + AIS_PACKET_FCS_BITS == rx->current_bit) {
         /* We have a packet */
-        uint16_t crc = _ais_crc16(rx->packet, AIS_PACKET_DATA_BITS/8);
-        hexdump_dump_hex(rx->packet, (AIS_PACKET_DATA_BITS + AIS_PACKET_FCS_BITS)/8);
-        DIAG("RECEIVING -> SEARCH_SYNC (crc16 = %04x)", crc);
+        size_t packet_bytes = AIS_PACKET_DATA_BITS/8;
+        uint16_t crc = _ais_crc16(rx->packet, packet_bytes),
+                 rx_crc = (uint16_t)rx->packet[packet_bytes] << 8 | (uint16_t)rx->packet[packet_bytes + 1];
+
+        if (rx_crc == crc) {
+            TSL_BUG_IF_FAILED(demod->on_msg_cb(demod, rx->packet, true));
+        }
+        DIAG("RECEIVING -> SEARCH_SYNC (crc16 = %04x, rx_crc16 = %04x)", crc, rx_crc);
         demod->state = AIS_DEMOD_STATE_SEARCH_SYNC;
         demod->sample_skip = 0;
         _ais_demod_detect_reset(&demod->detector);

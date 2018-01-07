@@ -6,6 +6,7 @@
 #include <tsl/safe_string.h>
 #include <tsl/safe_alloc.h>
 #include <tsl/assert.h>
+#include <tsl/hexdump.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -16,8 +17,8 @@ const int16_t *samples = NULL;
 static
 size_t nr_samples = 0;
 
-//#define TEST_FILE_NAME "ais_48khz_16b_raw.bin"
-#define TEST_FILE_NAME "ais_single_sample.bin"
+#define TEST_FILE_NAME "ais_48khz_16b_raw.bin"
+//#define TEST_FILE_NAME "ais_single_sample.bin"
 
 static
 aresult_t test_ais_demod_setup(void)
@@ -98,6 +99,7 @@ aresult_t test_ais_demod_cleanup(void)
 static
 aresult_t _test_on_message_cb(struct ais_demod *demod, const uint8_t *packet, bool fcs_valid)
 {
+    hexdump_dump_hex(packet, 168/8);
     return A_OK;
 }
 
