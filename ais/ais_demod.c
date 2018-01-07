@@ -12,14 +12,15 @@ static
 uint16_t _ais_crc16(const uint8_t *data, size_t len)
 {
     uint16_t crc = 0xffffu;
+    const uint16_t poly = 0x8408u;
 
     for (size_t i = 0; i < len; i++) {
-        crc ^= ((uint16_t)data[i] << 8);
+        crc ^= (uint16_t)data[i];
         for (size_t j = 0; j < 8; j++) {
-            if ((crc & 0x8000) == 0x8000) {
-                crc = (crc << 1) ^ 0x1021;
+            if (crc & 1) {
+                crc = (crc >> 1) ^ poly;
             } else {
-                crc <<= 1;
+                crc >>= 1;
             }
         }
     }
@@ -164,7 +165,7 @@ void _ais_demod_packet_rx_sample(struct ais_demod *demod, int16_t sample)
     rx->last_sample = raw;
 
     if (rx->nr_ones < 5) {
-        rx->packet[rx->current_bit / 8] |= bit << (7 - (rx->current_bit % 8));
+        rx->packet[rx->current_bit / 8] |= bit << (rx->current_bit % 8);
         rx->current_bit++;
     }
 
@@ -178,7 +179,7 @@ void _ais_demod_packet_rx_sample(struct ais_demod *demod, int16_t sample)
         /* We have a packet */
         size_t packet_bytes = AIS_PACKET_DATA_BITS/8;
         uint16_t crc = _ais_crc16(rx->packet, packet_bytes),
-                 rx_crc = (uint16_t)rx->packet[packet_bytes] << 8 | (uint16_t)rx->packet[packet_bytes + 1];
+                 rx_crc = (uint16_t)rx->packet[packet_bytes] | (uint16_t)rx->packet[packet_bytes + 1] << 8;
 
         if (rx_crc == crc) {
             TSL_BUG_IF_FAILED(demod->on_msg_cb(demod, rx->packet, true));
