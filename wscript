@@ -236,8 +236,6 @@ def build(bld):
 	bld.add_pre_fun(_preBuild)
 	bld.add_post_fun(_postBuild)
 
-	bld.read_shlib('rtlsdr', paths=bld.env.LIBPATH)
-
 	#Construct paths for the targets
 	basePath = bld.env.ENVIRONMENT
 	binPath = os.path.join(basePath, 'bin')
