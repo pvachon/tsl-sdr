@@ -10,21 +10,24 @@ struct ais_demod;
  * Callback called whenever a packet has been received.
  *
  * \param demod The demodulator state
- * \param packet The raw packet, 
+ * \param state The state passed to the demodulator on creation
+ * \param packet The raw packet, packed as binary
+ * \param packet_len The length of the raw packet, in bytes
  * \param fcs_valid Boolean value indicating if the FCS is valid or not
  */
-typedef aresult_t (*ais_demod_on_message_callback_func_t)(struct ais_demod *demod, const uint8_t *packet, bool fcs_valid);
+typedef aresult_t (*ais_demod_on_message_callback_func_t)(struct ais_demod *demod, void *state, const uint8_t *packet, size_t packet_len, bool fcs_valid);
 
 /**
  * Create a new AIS demodulator.
  *
  * \param pdemod The new demodulator state, returned by reference
+ * \param state State passed to the callback
  * \param cb The callback to execute after receiving and unpacking the AIS message (& checking FCS)
  * \param freq The frequency this is listening on. In Hz.
  *
  * \return A_OK on success, an error code otherwise.
  */
-aresult_t ais_demod_new(struct ais_demod **pdemod, ais_demod_on_message_callback_func_t cb, uint32_t freq);
+aresult_t ais_demod_new(struct ais_demod **pdemod, void *state, ais_demod_on_message_callback_func_t cb, uint32_t freq);
 
 /**
  * Delete a demodulator's state

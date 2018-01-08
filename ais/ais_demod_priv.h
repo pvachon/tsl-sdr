@@ -39,7 +39,7 @@ struct ais_demod_detect {
 };
 
 #define AIS_PACKET_BITS                 256
-#define AIS_PACKET_BYTES                (AIS_PACKET_BITS/8)
+#define AIS_PACKET_BYTES                ((5 * AIS_PACKET_BITS)/8)
 
 #define AIS_PACKET_PREAMBLE_BITS        24
 
@@ -58,7 +58,15 @@ struct ais_demod_detect {
  * is performed, but it does detect the packet start/end flags
  */
 struct ais_demod_rx {
-    uint8_t packet[AIS_PACKET_BYTES];
+    /**
+     * Current amount of data.
+     */
+    uint8_t packet[5 * AIS_PACKET_BYTES];
+
+    /**
+     * Shift register for the raw bits received. Used to find the end-of-message flag.
+     */
+    uint8_t raw_shr;
 
     /**
      * The previous sample we got
@@ -95,6 +103,7 @@ struct ais_demod {
     uint32_t freq;
     size_t sample_skip;
     size_t crc_rejects;
+    void *caller_state;
 };
 
 #define AIS_MSG(sev, sys, msg, ...)     MESSAGE("AIS", sev, sys, msg, ##__VA_ARGS__)

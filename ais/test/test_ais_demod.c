@@ -1,4 +1,5 @@
 #include <ais/ais_demod.h>
+#include <ais/ais_decode.h>
 
 #include <test/assert.h>
 #include <test/framework.h>
@@ -99,6 +100,28 @@ aresult_t test_ais_demod_cleanup(void)
 }
 
 static
+uint32_t _ais_decode_get_bitfield(const uint8_t *packet, size_t packet_len,
+        size_t offset, size_t len)
+{
+    uint64_t acc = 0;
+    size_t nr_bytes = (len + 7)/8,
+           start_byte = offset/8;
+
+    for (size_t i = 0; i < nr_bytes; i++) {
+        acc <<= 8;
+        acc |= packet[i + start_byte];
+    }
+
+    size_t end_bit = (offset + len) % 8;
+
+    acc >>= 8 - end_bit;
+    acc &= ((1ul << len) - 1);
+
+    return (uint32_t)acc;
+}
+
+#if 0
+static
 char _test_to_ascii_armor(uint8_t in)
 {
     if (in <= 39) {
@@ -107,13 +130,16 @@ char _test_to_ascii_armor(uint8_t in)
         return in - 40 + 96;
     }
 }
+#endif
 
 static
-aresult_t _test_on_message_cb(struct ais_demod *demod, const uint8_t *packet, bool fcs_valid)
+aresult_t _test_on_message_cb(struct ais_demod *demod, void *state, const uint8_t *packet, size_t packet_len, bool fcs_valid)
 {
     uint8_t msg_id = 0,
-            offs = 0;
+            repeat = 0;
     uint32_t mmsi = 0;
+#if 0
+    uint8_t offs = 0;
     uint8_t msg_ascii_6[168/6];
 
     memset(msg_ascii_6, 0, sizeof(msg_ascii_6));
@@ -135,22 +161,43 @@ aresult_t _test_on_message_cb(struct ais_demod *demod, const uint8_t *packet, bo
         printf("%c", _test_to_ascii_armor(msg_ascii_6[i]));
     }
     printf("\n");
+#endif
 
-    msg_id = msg_ascii_6[0];
+    /* Extract the message type */
+    msg_id = (packet[0] >> 2) & 0x3f;
 
-    /* MMSI is 32 bits long */
-    for (size_t i = 0; i < 5; i++) {
-        mmsi <<= 6;
-        mmsi |= msg_ascii_6[1 + i] & 0x3f;
-    }
+    /* Extract repeat indicator */
+    repeat = packet[0] & 0x3;
 
-    mmsi <<= 2;
-    mmsi |= (msg_ascii_6[6] >> 4) & 0x3;
+    /* Extract the MMSI from the packet */
+    mmsi  = (uint32_t)packet[1] << 22;
+    mmsi |= (uint32_t)packet[2] << 14;
+    mmsi |= (uint32_t)packet[3] << 6;
+    mmsi |= ((uint32_t)packet[4] >> 2) & 0x3f;
 
-    printf("MsgId: %02u MMSI: %8u\n", msg_id, mmsi);
+    uint32_t mmsi_test = _ais_decode_get_bitfield(packet, packet_len, 8, 30);
 
+    TEST_INF("MsgId: %02u Rpt: %1u MMSI: %9u Test MMSI: %9u (Len: %zu bytes)", msg_id, repeat, mmsi, mmsi_test, packet_len);
+
+#if 0
     hexdump_dump_hex(msg_ascii_6, sizeof(msg_ascii_6));
+
     hexdump_dump_hex(packet, 168/8);
+#endif
+    return A_OK;
+}
+
+TEST_DECLARE_UNIT(test_one_shot_decoder, ais_demod)
+{
+    struct ais_decode *decoder = NULL;
+
+    TEST_INF("Processing %zu samples in one shot.", nr_samples);
+
+    TEST_ASSERT_OK(ais_decode_new(&decoder, 162025000ul));
+    TEST_ASSERT_NOT_NULL(decoder);
+    TEST_ASSERT_OK(ais_decode_on_pcm(decoder, samples, nr_samples));
+    TEST_ASSERT_OK(ais_decode_delete(&decoder));
+
     return A_OK;
 }
 
@@ -160,7 +207,7 @@ TEST_DECLARE_UNIT(test_one_shot, ais_demod)
 
     TEST_INF("Processing %zu samples in one shot.", nr_samples);
 
-    TEST_ASSERT_OK(ais_demod_new(&demod, _test_on_message_cb, 162025000ul));
+    TEST_ASSERT_OK(ais_demod_new(&demod, NULL, _test_on_message_cb, 162025000ul));
     TEST_ASSERT_NOT_NULL(demod);
     TEST_ASSERT_OK(ais_demod_on_pcm(demod, samples, nr_samples));
     TEST_ASSERT_OK(ais_demod_delete(&demod));
@@ -172,7 +219,7 @@ TEST_DECLARE_UNIT(test_smoke, ais_demod)
 {
     struct ais_demod *demod = NULL;
 
-    TEST_ASSERT_OK(ais_demod_new(&demod, _test_on_message_cb, 162025000ul));
+    TEST_ASSERT_OK(ais_demod_new(&demod, NULL, _test_on_message_cb, 162025000ul));
     TEST_ASSERT_NOT_NULL(demod);
     TEST_ASSERT_OK(ais_demod_delete(&demod));
 
