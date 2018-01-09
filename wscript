@@ -270,12 +270,12 @@ def build(bld):
 		name	= 'resampler',
 	)
 
-	# depager
+	# decoder
 	bld.program(
-		source	= bld.path.ant_glob('depager/*.c'),
-		use		= ['app', 'config', 'tsl', 'filter', 'pager'],
-		target	= os.path.join(binPath, 'depager'),
-		name	= 'depager',
+		source	= bld.path.ant_glob('decoder/*.c'),
+		use		= ['app', 'config', 'tsl', 'filter', 'pager', 'ais'],
+		target	= os.path.join(binPath, 'decoder'),
+		name	= 'decoder',
 	)
 
 	#app
