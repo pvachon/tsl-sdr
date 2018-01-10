@@ -9,8 +9,6 @@
 
 #include <string.h>
 
-#define AIS_DEBUG_STATE
-
 #ifdef AIS_DEBUG_STATE
 #define STATE_TRANSITION(x, ...)    DIAG(x, ##__VA_ARGS__)
 #else /* ndef(AIS_DEBUG_STATE) */

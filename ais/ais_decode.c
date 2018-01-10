@@ -56,7 +56,9 @@ void _ais_decode_get_string(const uint8_t *packet, size_t packet_len,
     memset(dest, 0, nr_chars);
 
     for (size_t i = 0; i < nr_chars; i++) {
-        dest[i] = _ais_decode_get_bitfield(packet, packet_len, base, 6);
+        char v = _ais_decode_get_bitfield(packet, packet_len, base, 6);
+        /* Convert out of the 6-bit ASCII format */
+        dest[i] = v > 0x1f ? v : v + 0x40;
         base += 6;
     }
 }
@@ -207,7 +209,7 @@ aresult_t _ais_decode_static_voyage_data(struct ais_decode *decode, const uint8_
     _ais_decode_get_string(packet, packet_len, 302, 20, destination);
     destination[20] = '\0';
 
-    printf("  V=%u Imo=%9u Callsign=[%s] Vessel=[%s] ShipType=%3u (%u, %u, %u, %u) Fix=%s ETA=%u-%u %u:%u Draught=%4.1f",
+    printf("  V=%u Imo=%9u Callsign=[%s] Vessel=[%s] ShipType=%3u (%u, %u, %u, %u) Fix=%s ETA=%u-%u %u:%u Draught=%4.1f\n",
             version, imo_number, callsign, ship_name, ship_type, dim_to_bow, dim_to_stern,
             dim_to_port, dim_to_starboard, _ais_decode_epfd_type[fix_type & 0xf],
             eta_month, eta_day, eta_hour, eta_minute, (float)draught/10.0);
