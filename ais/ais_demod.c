@@ -9,6 +9,8 @@
 
 #include <string.h>
 
+#define AIS_DEBUG_STATE
+
 #ifdef AIS_DEBUG_STATE
 #define STATE_TRANSITION(x, ...)    DIAG(x, ##__VA_ARGS__)
 #else /* ndef(AIS_DEBUG_STATE) */
@@ -191,18 +193,20 @@ void _ais_demod_packet_rx_sample(struct ais_demod *demod, int16_t sample)
     if (rx->raw_shr == AIS_PACKET_END_FLAG || rx->current_bit == (5 * 256)) {
         /* We have a packet or some horrible corruption */
         size_t packet_bytes = rx->current_bit / 8;
-        uint16_t crc = _ais_crc16(rx->packet, packet_bytes - 2),
-                 rx_crc = (uint16_t)rx->packet[packet_bytes - 2] | (uint16_t)rx->packet[packet_bytes - 1] << 8;
+        if (4 <= packet_bytes) {
+            uint16_t crc = _ais_crc16(rx->packet, packet_bytes - 2),
+                     rx_crc = (uint16_t)rx->packet[packet_bytes - 2] | (uint16_t)rx->packet[packet_bytes - 1] << 8;
 
-        if (rx_crc == crc) {
-            TSL_BUG_IF_FAILED(demod->on_msg_cb(demod, demod->caller_state, rx->packet, packet_bytes - 2, true));
-//#ifdef AIS_PACKET_DEBUG
-        } else {
-            DIAG("Failed CRC match, raw packet:");
-            hexdump_dump_hex(rx->packet, packet_bytes);
-//#endif /* defined(_TSL_DEBUG) */
+            if (rx_crc == crc) {
+                TSL_BUG_IF_FAILED(demod->on_msg_cb(demod, demod->caller_state, rx->packet, packet_bytes - 2, true));
+#ifdef AIS_PACKET_DEBUG
+            } else {
+                DIAG("Failed CRC match, raw packet (calculated %04x, received %04x):", crc, rx_crc);
+                hexdump_dump_hex(rx->packet, packet_bytes);
+#endif /* defined(_TSL_DEBUG) */
+            }
         }
-        STATE_TRANSITION("RECEIVING -> SEARCH_SYNC (crc16 = %04x, rx_crc16 = %04x)", crc, rx_crc);
+        STATE_TRANSITION("RECEIVING -> SEARCH_SYNC");
         demod->state = AIS_DEMOD_STATE_SEARCH_SYNC;
         demod->sample_skip = 0;
         _ais_demod_detect_reset(&demod->detector);

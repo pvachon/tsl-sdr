@@ -19,7 +19,8 @@ uint32_t _ais_decode_get_bitfield(const uint8_t *packet, size_t packet_len,
     uint64_t acc = 0;
     size_t nr_bytes = 0,
            start_byte = offset/8,
-           end_byte = (offset + len + 7)/8;
+           end_byte = (offset + len + 7)/8,
+           end_rem_bits = 0;
 
     nr_bytes = end_byte - start_byte;
 
@@ -30,9 +31,9 @@ uint32_t _ais_decode_get_bitfield(const uint8_t *packet, size_t packet_len,
         acc |= packet[i + start_byte];
     }
 
-    size_t end_rem_bits = (offset + len) % 8;
+    end_rem_bits = (end_byte * 8) - (offset + len);
 
-    acc >>= 8 - end_rem_bits;
+    acc >>= end_rem_bits;
     acc &= ((1ull << len) - 1);
 
     return (uint32_t)acc;
@@ -55,7 +56,9 @@ aresult_t _ais_decode_position_report(struct ais_decode *decode, const uint8_t *
 
     uint32_t nav_stat = 0,
              position_acc = 0,
-             course = 0;
+             course = 0,
+             heading = 0,
+             timestamp = 0;
     int32_t longitude = 0,
             rate_of_turn = 0,
             speed_over_ground = 0,
@@ -72,10 +75,69 @@ aresult_t _ais_decode_position_report(struct ais_decode *decode, const uint8_t *
     longitude = _ais_decode_get_bitfield_signed(packet, packet_len, 61, 28);
     latitude = _ais_decode_get_bitfield_signed(packet, packet_len, 89, 27);
     course = _ais_decode_get_bitfield(packet, packet_len, 116, 12);
+    heading = _ais_decode_get_bitfield(packet, packet_len, 128, 9);
+    timestamp = _ais_decode_get_bitfield(packet, packet_len, 137, 6);
 
-    printf("  Nav Stat = %1u RoT = %3f SoG = %4.2f (%9.6f, %9.6f), CoG = %u\n",
+    printf("  Nav Stat = %1u RoT = %3f SoG = %4.2f (%9.6f, %9.6f), CoG = %u Heading = %u Timestamp = %u\n",
             nav_stat, (double)rate_of_turn, (double)speed_over_ground/10.0, (double)longitude/600000.0,
-            (double)latitude/600000.0, course);
+            (double)latitude/600000.0, course, heading, timestamp);
+
+    return ret;
+}
+
+static
+const char *_ais_decode_epfd_type[] = {
+    [ 0] = "Undefined",
+    [ 1] = "GPS",
+    [ 2] = "GLONASS",
+    [ 3] = "Combined GPS/GLONASS",
+    [ 4] = "Loran-C",
+    [ 5] = "Chayka",
+    [ 6] = "Integrated Navigation System",
+    [ 7] = "Surveyed",
+    [ 8] = "Galileo",
+    [ 9] = "Unknown 9",
+    [10] = "Unknown 10",
+    [11] = "Unknown 11",
+    [12] = "Unknown 12",
+    [13] = "Unknown 13",
+    [14] = "Unknown 14",
+    [15] = "Unknown 15",
+    [16] = "Unknown 16",
+};
+
+static
+aresult_t _ais_decode_base_station_report(struct ais_decode *decode, const uint8_t *packet, size_t packet_len,
+        unsigned msg_id, unsigned repeat, uint32_t mmsi)
+{
+    aresult_t ret = A_OK;
+
+    uint32_t year = 0,
+             month = 0,
+             day = 0,
+             hour = 0,
+             minute = 0,
+             second = 0,
+             epfd_type = 0;
+    int32_t longitude = 0,
+            latitude = 0;
+
+    year = _ais_decode_get_bitfield(packet, packet_len, 38, 14);
+    printf("---> getting month\n");
+    month = _ais_decode_get_bitfield(packet, packet_len, 52, 4);
+    day = _ais_decode_get_bitfield(packet, packet_len, 56, 5);
+    hour = _ais_decode_get_bitfield(packet, packet_len, 61, 5);
+    minute = _ais_decode_get_bitfield(packet, packet_len, 66, 6);
+    second = _ais_decode_get_bitfield(packet, packet_len, 72, 6);
+
+    longitude = _ais_decode_get_bitfield_signed(packet, packet_len, 79, 28);
+    latitude = _ais_decode_get_bitfield_signed(packet, packet_len,  107, 27);
+
+    epfd_type = _ais_decode_get_bitfield(packet, packet_len, 134, 4);
+
+    printf("  %04u-%02u-%02u-%02u:%02u:%02u - (%9.6f, %9.6f) - EPFD: %s (%u)\n",
+            year, month, day, hour, minute, second, (float)longitude/600000.0,
+            (float)latitude/600000.0, _ais_decode_epfd_type[epfd_type & 0xf], epfd_type);
 
     return ret;
 }
@@ -117,6 +179,7 @@ aresult_t _ais_decode_demod_on_msg(struct ais_demod *demod, void *state, const u
         _ais_decode_position_report(decode, packet, packet_len, msg_id, repeat, mmsi);
         break;
     case AIS_MESSAGE_BASE_STATION_REPORT:
+        _ais_decode_base_station_report(decode, packet, packet_len, msg_id, repeat, mmsi);
         break;
     case AIS_MESSAGE_SHIP_STATIC_INFO:
         break;

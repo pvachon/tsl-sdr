@@ -120,7 +120,6 @@ uint32_t _ais_decode_get_bitfield(const uint8_t *packet, size_t packet_len,
     return (uint32_t)acc;
 }
 
-#if 0
 static
 char _test_to_ascii_armor(uint8_t in)
 {
@@ -130,7 +129,6 @@ char _test_to_ascii_armor(uint8_t in)
         return in - 40 + 96;
     }
 }
-#endif
 
 static
 aresult_t _test_on_message_cb(struct ais_demod *demod, void *state, const uint8_t *packet, size_t packet_len, bool fcs_valid)
@@ -138,7 +136,6 @@ aresult_t _test_on_message_cb(struct ais_demod *demod, void *state, const uint8_
     uint8_t msg_id = 0,
             repeat = 0;
     uint32_t mmsi = 0;
-#if 0
     uint8_t offs = 0;
     uint8_t msg_ascii_6[168/6];
 
@@ -161,7 +158,6 @@ aresult_t _test_on_message_cb(struct ais_demod *demod, void *state, const uint8_
         printf("%c", _test_to_ascii_armor(msg_ascii_6[i]));
     }
     printf("\n");
-#endif
 
     /* Extract the message type */
     msg_id = (packet[0] >> 2) & 0x3f;
@@ -179,11 +175,6 @@ aresult_t _test_on_message_cb(struct ais_demod *demod, void *state, const uint8_
 
     TEST_INF("MsgId: %02u Rpt: %1u MMSI: %9u Test MMSI: %9u (Len: %zu bytes)", msg_id, repeat, mmsi, mmsi_test, packet_len);
 
-#if 0
-    hexdump_dump_hex(msg_ascii_6, sizeof(msg_ascii_6));
-
-    hexdump_dump_hex(packet, 168/8);
-#endif
     return A_OK;
 }
 
