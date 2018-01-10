@@ -49,6 +49,19 @@ int32_t _ais_decode_get_bitfield_signed(const uint8_t *packet, size_t packet_len
 }
 
 static
+void _ais_decode_get_string(const uint8_t *packet, size_t packet_len,
+        size_t offset, size_t nr_chars, char *dest)
+{
+    size_t base = offset;
+    memset(dest, 0, nr_chars);
+
+    for (size_t i = 0; i < nr_chars; i++) {
+        dest[i] = _ais_decode_get_bitfield(packet, packet_len, base, 6);
+        base += 6;
+    }
+}
+
+static
 aresult_t _ais_decode_position_report(struct ais_decode *decode, const uint8_t *packet, size_t packet_len,
         unsigned msg_id, unsigned repeat, uint32_t mmsi)
 {
@@ -123,7 +136,6 @@ aresult_t _ais_decode_base_station_report(struct ais_decode *decode, const uint8
             latitude = 0;
 
     year = _ais_decode_get_bitfield(packet, packet_len, 38, 14);
-    printf("---> getting month\n");
     month = _ais_decode_get_bitfield(packet, packet_len, 52, 4);
     day = _ais_decode_get_bitfield(packet, packet_len, 56, 5);
     hour = _ais_decode_get_bitfield(packet, packet_len, 61, 5);
@@ -138,6 +150,67 @@ aresult_t _ais_decode_base_station_report(struct ais_decode *decode, const uint8
     printf("  %04u-%02u-%02u-%02u:%02u:%02u - (%9.6f, %9.6f) - EPFD: %s (%u)\n",
             year, month, day, hour, minute, second, (float)longitude/600000.0,
             (float)latitude/600000.0, _ais_decode_epfd_type[epfd_type & 0xf], epfd_type);
+
+    return ret;
+}
+
+static
+aresult_t _ais_decode_static_voyage_data(struct ais_decode *decode, const uint8_t *packet, size_t packet_len,
+        unsigned msg_id, unsigned repeat, uint32_t mmsi)
+{
+    aresult_t ret = A_OK;
+
+    uint32_t version = 0,
+             imo_number = 0,
+             ship_type = 0,
+             dim_to_bow = 0,
+             dim_to_stern = 0,
+             dim_to_port = 0,
+             dim_to_starboard = 0,
+             fix_type = 0,
+             eta_month = 0,
+             eta_day = 0,
+             eta_hour = 0,
+             eta_minute = 0,
+             draught = 0;
+
+    char callsign[8],
+         ship_name[21],
+         destination[21];
+
+    TSL_ASSERT_ARG(NULL != decode);
+    TSL_ASSERT_ARG(NULL != packet);
+    TSL_ASSERT_ARG(0 != packet_len);
+
+    version = _ais_decode_get_bitfield(packet, packet_len, 38, 2);
+    imo_number = _ais_decode_get_bitfield(packet, packet_len, 40, 30);
+
+    _ais_decode_get_string(packet, packet_len, 70, 7, callsign);
+    callsign[7] = '\0';
+    _ais_decode_get_string(packet, packet_len, 112, 20, ship_name);
+    ship_name[20] = '\0';
+
+    ship_type = _ais_decode_get_bitfield(packet, packet_len, 232, 8);
+    dim_to_bow = _ais_decode_get_bitfield(packet, packet_len, 240, 9);
+    dim_to_stern = _ais_decode_get_bitfield(packet, packet_len, 249, 9);
+    dim_to_port = _ais_decode_get_bitfield(packet, packet_len, 258, 6);
+    dim_to_starboard = _ais_decode_get_bitfield(packet, packet_len, 264, 6);
+    fix_type = _ais_decode_get_bitfield(packet, packet_len, 270, 4);
+
+    eta_month = _ais_decode_get_bitfield(packet, packet_len, 274, 4);
+    eta_day = _ais_decode_get_bitfield(packet, packet_len, 278, 5);
+    eta_hour = _ais_decode_get_bitfield(packet, packet_len, 283, 5);
+    eta_minute = _ais_decode_get_bitfield(packet, packet_len, 288, 6);
+
+    draught = _ais_decode_get_bitfield(packet, packet_len, 294, 8);
+
+    _ais_decode_get_string(packet, packet_len, 302, 20, destination);
+    destination[20] = '\0';
+
+    printf("  V=%u Imo=%9u Callsign=[%s] Vessel=[%s] ShipType=%3u (%u, %u, %u, %u) Fix=%s ETA=%u-%u %u:%u Draught=%4.1f",
+            version, imo_number, callsign, ship_name, ship_type, dim_to_bow, dim_to_stern,
+            dim_to_port, dim_to_starboard, _ais_decode_epfd_type[fix_type & 0xf],
+            eta_month, eta_day, eta_hour, eta_minute, (float)draught/10.0);
 
     return ret;
 }
@@ -182,6 +255,7 @@ aresult_t _ais_decode_demod_on_msg(struct ais_demod *demod, void *state, const u
         _ais_decode_base_station_report(decode, packet, packet_len, msg_id, repeat, mmsi);
         break;
     case AIS_MESSAGE_SHIP_STATIC_INFO:
+        _ais_decode_static_voyage_data(decode, packet, packet_len, msg_id, repeat, mmsi);
         break;
     }
 

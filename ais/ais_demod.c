@@ -199,8 +199,9 @@ void _ais_demod_packet_rx_sample(struct ais_demod *demod, int16_t sample)
 
             if (rx_crc == crc) {
                 TSL_BUG_IF_FAILED(demod->on_msg_cb(demod, demod->caller_state, rx->packet, packet_bytes - 2, true));
-#ifdef AIS_PACKET_DEBUG
             } else {
+                demod->crc_rejects++;
+#ifdef AIS_PACKET_DEBUG
                 DIAG("Failed CRC match, raw packet (calculated %04x, received %04x):", crc, rx_crc);
                 hexdump_dump_hex(rx->packet, packet_bytes);
 #endif /* defined(_TSL_DEBUG) */
