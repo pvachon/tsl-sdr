@@ -316,6 +316,81 @@ aresult_t _on_pocsag_num_msg(
     return A_OK;
 }
 
+static
+aresult_t _on_ais_position_report(struct ais_decode *decode, void *state, struct ais_position_report *pr, const char *raw_msg)
+{
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+
+    fprintf(out_file,
+            "{\"proto\":\"ais\",\"type\":\"positionReport\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+            "\"mmsi\":%u,\"navStat\":%u,\"rateOfTurn\":%d,\"speedOverGround\":%f,\"positionAcc\":%u,"
+            "\"longitude\":%f,\"latitude\":%f,\"course\":%u,\"heading\":%u,\"timestamp\":%u,\"rawAscii\":\"",
+            gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+            pr->mmsi, pr->nav_stat, pr->rate_of_turn, (double)pr->speed_over_ground, pr->position_acc,
+            (double)pr->longitude, (double)pr->latitude, pr->course, pr->heading, pr->timestamp);
+
+    for (size_t i = 0; i < strlen(raw_msg); i++) {
+        _decoder_put_alnum_char(out_file, raw_msg[i]);
+    }
+
+    fprintf(out_file, "\"}\n");
+
+    return A_OK;
+}
+
+static
+aresult_t _on_ais_base_station_report(struct ais_decode *decode, void *state, struct ais_base_station_report *br,
+        const char *raw_msg)
+{
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+
+    fprintf(out_file,
+            "{\"proto\":\"ais\",\"type\":\"baseStationReport\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+            "\"mmsi\":%u,\"baseStationDate\":\"%04u-%02u-%02u %02u:%02u:%02u UTC\","
+            "\"longitude\":%f,\"latitude\":%f,\"fixType\":\"%s\",\"rawAscii\":\"",
+            gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+            br->mmsi, br->year, br->month, br->day, br->hour, br->minute, br->second,
+            (double)br->longitude, (double)br->latitude, br->epfd_name);
+
+    for (size_t i = 0; i < strlen(raw_msg); i++) {
+        _decoder_put_alnum_char(out_file, raw_msg[i]);
+    }
+
+    fprintf(out_file, "\"}\n");
+
+    return A_OK;
+}
+
+static
+aresult_t _on_ais_static_voyage_data(struct ais_decode *decode, void *state, struct ais_static_voyage_data *svd,
+        const char *raw_msg)
+{
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+
+    /* TODO: Ensure we escape the callsign, ship name and destination */
+
+    fprintf(out_file,
+            "{\"proto\":\"ais\",\"type\":\"staticAndVoyageData\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+            "\"mmsi\":%u,\"version\":%u,\"imoNumber\":%u,\"callsign\":\"%s\",\"shipName\":\"%s\","
+            "\"shipType\":%u,\"dimensions\":{\"toBow\":%u,\"toStern\":%u,\"toPort\":%u,\"toStarboard\":%u},"
+            "\"fixType\":%s,\"eta\":\"%02u-%02u %02u:%02u\",\"draught\":%f,\"destination\":\"%s\","
+            "\"rawAscii\":\"",
+            gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+            svd->mmsi, svd->version, svd->imo_number, svd->callsign, svd->ship_name,
+            svd->ship_type, svd->dim_to_bow, svd->dim_to_stern, svd->dim_to_port, svd->dim_to_starboard,
+            svd->epfd_name, svd->eta_month, svd->eta_day, svd->eta_hour, svd->eta_minute, svd->draught, svd->destination);
+
+    for (size_t i = 0; i < strlen(raw_msg); i++) {
+        _decoder_put_alnum_char(out_file, raw_msg[i]);
+    }
+
+    fprintf(out_file, "\"}\n");
+
+    return A_OK;
+}
 
 static
 void _set_options(int argc, char * const argv[])
@@ -614,7 +689,7 @@ int main(int argc, char * const argv[])
         TSL_BUG_IF_FAILED(pager_pocsag_new(&pocsag, center_freq, _on_pocsag_num_msg, _on_pocsag_alnum_msg));
     } else if (_decoder_type == DECODER_PROTO_TYPE_AIS) {
         DEC_MSG(SEV_INFO, "PROTOCOL", "Using the AIS Message Format.");
-        TSL_BUG_IF_FAILED(ais_decode_new(&ais_decode, center_freq));
+        TSL_BUG_IF_FAILED(ais_decode_new(&ais_decode, center_freq, _on_ais_position_report, _on_ais_base_station_report, _on_ais_static_voyage_data));
     }
 
     DEC_MSG(SEV_INFO, "STARTING", "Starting pager message decoder on frequency %u Hz.", center_freq);

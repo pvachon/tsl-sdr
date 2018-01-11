@@ -184,7 +184,7 @@ TEST_DECLARE_UNIT(test_one_shot_decoder, ais_demod)
 
     TEST_INF("Processing %zu samples in one shot.", nr_samples);
 
-    TEST_ASSERT_OK(ais_decode_new(&decoder, 162025000ul));
+    TEST_ASSERT_OK(ais_decode_new(&decoder, 162025000ul, NULL, NULL, NULL));
     TEST_ASSERT_NOT_NULL(decoder);
     TEST_ASSERT_OK(ais_decode_on_pcm(decoder, samples, nr_samples));
     TEST_ASSERT_OK(ais_decode_delete(&decoder));
