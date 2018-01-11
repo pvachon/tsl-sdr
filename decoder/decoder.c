@@ -376,7 +376,7 @@ aresult_t _on_ais_static_voyage_data(struct ais_decode *decode, void *state, str
             "{\"proto\":\"ais\",\"type\":\"staticAndVoyageData\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
             "\"mmsi\":%u,\"version\":%u,\"imoNumber\":%u,\"callsign\":\"%s\",\"shipName\":\"%s\","
             "\"shipType\":%u,\"dimensions\":{\"toBow\":%u,\"toStern\":%u,\"toPort\":%u,\"toStarboard\":%u},"
-            "\"fixType\":%s,\"eta\":\"%02u-%02u %02u:%02u\",\"draught\":%f,\"destination\":\"%s\","
+            "\"fixType\":\"%s\",\"eta\":\"%02u-%02u %02u:%02u\",\"draught\":%f,\"destination\":\"%s\","
             "\"rawAscii\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             svd->mmsi, svd->version, svd->imo_number, svd->callsign, svd->ship_name,
