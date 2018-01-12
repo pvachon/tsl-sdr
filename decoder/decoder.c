@@ -325,7 +325,7 @@ aresult_t _on_ais_position_report(struct ais_decode *decode, void *state, struct
     fprintf(out_file,
             "{\"proto\":\"ais\",\"type\":\"positionReport\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
             "\"mmsi\":%u,\"navStat\":%u,\"rateOfTurn\":%d,\"speedOverGround\":%f,\"positionAcc\":%u,"
-            "\"longitude\":%f,\"latitude\":%f,\"course\":%u,\"heading\":%u,\"timestamp\":%u,\"rawAscii\":\"",
+            "\"position\":{\"longitude\":%f,\"latitude\":%f},\"course\":%u,\"heading\":%u,\"timestamp\":%u,\"rawAscii\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             pr->mmsi, pr->nav_stat, pr->rate_of_turn, (double)pr->speed_over_ground, pr->position_acc,
             (double)pr->longitude, (double)pr->latitude, pr->course, pr->heading, pr->timestamp);
@@ -349,7 +349,7 @@ aresult_t _on_ais_base_station_report(struct ais_decode *decode, void *state, st
     fprintf(out_file,
             "{\"proto\":\"ais\",\"type\":\"baseStationReport\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
             "\"mmsi\":%u,\"baseStationDate\":\"%04u-%02u-%02u %02u:%02u:%02u UTC\","
-            "\"longitude\":%f,\"latitude\":%f,\"fixType\":\"%s\",\"rawAscii\":\"",
+            "\"position\":{\"longitude\":%f,\"latitude\":%f},\"fixType\":\"%s\",\"rawAscii\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             br->mmsi, br->year, br->month, br->day, br->hour, br->minute, br->second,
             (double)br->longitude, (double)br->latitude, br->epfd_name);
