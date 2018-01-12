@@ -7,6 +7,8 @@
 #include <tsl/diag.h>
 #include <tsl/assert.h>
 
+#include <string.h>
+
 struct ais_decode {
     struct ais_demod *demod;
     uint32_t freq;
