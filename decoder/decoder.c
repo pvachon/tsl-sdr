@@ -325,7 +325,7 @@ aresult_t _on_ais_position_report(struct ais_decode *decode, void *state, struct
     fprintf(out_file,
             "{\"proto\":\"ais\",\"type\":\"positionReport\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
             "\"mmsi\":%u,\"navStat\":%u,\"rateOfTurn\":%d,\"speedOverGround\":%f,\"positionAcc\":%u,"
-            "\"pos\":{\"lon\":%f,\"lat\":%f},\"course\":%u,\"heading\":%u,\"timestamp\":%u,\"rawAscii\":\"",
+            "\"pos\":{\"lon\":%f,\"lat\":%f},\"course\":%u,\"heading\":%u,\"seconds\":%u,\"rawAscii\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             pr->mmsi, pr->nav_stat, pr->rate_of_turn, (double)pr->speed_over_ground, pr->position_acc,
             (double)pr->longitude, (double)pr->latitude, pr->course, pr->heading, pr->timestamp);
