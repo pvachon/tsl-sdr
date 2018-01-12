@@ -104,7 +104,7 @@ bool _invert = false;
 static
 void _usage(const char *appname)
 {
-    DEC_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -d [sample_debug_file] -S [input sample rate] -f [pager chan freq] [-c] [-o output JSON file] [-b] [-i] [in_fifo]",
+    DEC_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -d [sample_debug_file] -S [input sample rate] -f [center freq] [-c] [-o output JSON file] [-b] [-i] [in_fifo]",
             appname);
     DEC_MSG(SEV_INFO, "USAGE", "        -b        Enable DC blocking filter          ");
     DEC_MSG(SEV_INFO, "USAGE", "        -c        Create JSON output file            ");
@@ -325,7 +325,7 @@ aresult_t _on_ais_position_report(struct ais_decode *decode, void *state, struct
     fprintf(out_file,
             "{\"proto\":\"ais\",\"type\":\"positionReport\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
             "\"mmsi\":%u,\"navStat\":%u,\"rateOfTurn\":%d,\"speedOverGround\":%f,\"positionAcc\":%u,"
-            "\"position\":{\"longitude\":%f,\"latitude\":%f},\"course\":%u,\"heading\":%u,\"timestamp\":%u,\"rawAscii\":\"",
+            "\"pos\":{\"lon\":%f,\"lat\":%f},\"course\":%u,\"heading\":%u,\"timestamp\":%u,\"rawAscii\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             pr->mmsi, pr->nav_stat, pr->rate_of_turn, (double)pr->speed_over_ground, pr->position_acc,
             (double)pr->longitude, (double)pr->latitude, pr->course, pr->heading, pr->timestamp);
@@ -349,7 +349,7 @@ aresult_t _on_ais_base_station_report(struct ais_decode *decode, void *state, st
     fprintf(out_file,
             "{\"proto\":\"ais\",\"type\":\"baseStationReport\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
             "\"mmsi\":%u,\"baseStationDate\":\"%04u-%02u-%02u %02u:%02u:%02u UTC\","
-            "\"position\":{\"longitude\":%f,\"latitude\":%f},\"fixType\":\"%s\",\"rawAscii\":\"",
+            "\"pos\":{\"lon\":%f,\"lat\":%f},\"fixType\":\"%s\",\"rawAscii\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             br->mmsi, br->year, br->month, br->day, br->hour, br->minute, br->second,
             (double)br->longitude, (double)br->latitude, br->epfd_name);
@@ -447,7 +447,7 @@ void _set_options(int argc, char * const argv[])
             } else if (!strncasecmp(optarg, "ais", 3)) {
                 _decoder_type = DECODER_PROTO_TYPE_AIS;
             } else {
-                DEC_MSG(SEV_ERROR, "UNKNOWN-PAGER-TYPE", "Unknown pager type specified: %s", optarg);
+                DEC_MSG(SEV_ERROR, "UNKNOWN-PROTOCOL-TYPE", "Unknown protocol type specified: %s", optarg);
                 exit(EXIT_FAILURE);
             }
             break;
@@ -641,7 +641,7 @@ aresult_t process_samples(void)
             TSL_BUG_IF_FAILED(dc_blocker_apply(&blck, output_buf, new_samples));
         }
 
-        /* Process with the pager object */
+        /* Process with the protocol object */
         if (_decoder_type == DECODER_PAGER_TYPE_FLEX) {
             TSL_BUG_IF_FAILED(pager_flex_on_pcm(flex, output_buf, new_samples));
         } else if (_decoder_type == DECODER_PAGER_TYPE_POCSAG) {
@@ -680,7 +680,7 @@ int main(int argc, char * const argv[])
     /* Create the polyphase resampling filter */
     TSL_BUG_IF_FAILED(polyphase_fir_new(&pfir, nr_filter_coeffs, filter_coeffs, interpolate, decimate));
 
-    /* Set up the appropriate pager protocol decoder */
+    /* Set up the appropriate protocol decoder */
     if (_decoder_type == DECODER_PAGER_TYPE_FLEX) {
         DEC_MSG(SEV_INFO, "PROTOCOL", "Using the Motorola FLEX pager protocol.");
         TSL_BUG_IF_FAILED(pager_flex_new(&flex, center_freq, _on_flex_alnum_msg, _on_flex_num_msg, _on_flex_siv_msg));
@@ -692,10 +692,10 @@ int main(int argc, char * const argv[])
         TSL_BUG_IF_FAILED(ais_decode_new(&ais_decode, center_freq, _on_ais_position_report, _on_ais_base_station_report, _on_ais_static_voyage_data));
     }
 
-    DEC_MSG(SEV_INFO, "STARTING", "Starting pager message decoder on frequency %u Hz.", center_freq);
+    DEC_MSG(SEV_INFO, "STARTING", "Starting message decoder on frequency %u Hz.", center_freq);
 
     if (FAILED(process_samples())) {
-        DEC_MSG(SEV_FATAL, "FIR-FAILED", "Failed during pager processing, aborting.");
+        DEC_MSG(SEV_FATAL, "FIR-FAILED", "Failed during message processing, aborting.");
         goto done;
     }
 
