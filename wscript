@@ -268,12 +268,12 @@ def build(bld):
 		name	= 'resampler',
 	)
 
-	# depager
+	# decoder
 	bld.program(
-		source	= bld.path.ant_glob('depager/*.c'),
-		use		= ['app', 'config', 'tsl', 'filter', 'pager'],
-		target	= os.path.join(binPath, 'depager'),
-		name	= 'depager',
+		source	= bld.path.ant_glob('decoder/*.c'),
+		use		= ['app', 'config', 'tsl', 'filter', 'pager', 'ais'],
+		target	= os.path.join(binPath, 'decoder'),
+		name	= 'decoder',
 	)
 
 	#app
@@ -335,6 +335,20 @@ def build(bld):
 		use      = ['pager', 'config', 'test', 'tsl'],
 		target   = os.path.join(testPath, 'test_pager'),
 		name     = 'test_pager',
+	)
+
+	# AIS
+	bld.stlib(
+		source   = bld.path.ant_glob('ais/*.c'),
+		use      = ['tsl'],
+		target   = os.path.join(libPath, 'ais'),
+		name     = 'ais',
+	)
+	bld.program(
+		source   = bld.path.ant_glob('ais/test/*.c'),
+		use      = ['ais', 'config', 'test', 'tsl'],
+		target   = os.path.join(testPath, 'test_ais'),
+		name     = 'test_ais',
 	)
 
 	#test
