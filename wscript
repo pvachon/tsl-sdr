@@ -324,6 +324,13 @@ def build(bld):
 		name     = 'test_filter',
 	)
 
+	# Dect
+	bld.program(
+		source	= bld.path.ant_glob('dect/*.c'),
+		use		= ['app', 'config', 'tsl', 'filter'],
+		target	= os.path.join(binPath, 'dect'),
+		name	= 'dect',
+	)
 
 	# Pager
 	bld.stlib(
