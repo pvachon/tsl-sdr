@@ -81,6 +81,8 @@ aresult_t receiver_sample_buf_deliver(struct receiver *rx, struct sample_buf *bu
 
     struct demod_thread *dthr = NULL;
 
+    TSL_BUG_ON(0 == buf->nr_samples);
+
     atomic_store(&buf->refcount, rx->nr_demod_threads);
 
     /* Make it available to each demodulator/processing thread */

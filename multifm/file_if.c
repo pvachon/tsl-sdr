@@ -37,6 +37,8 @@ aresult_t __file_read_bytes(struct file_worker_thread *rx, void *tgt_buf, size_t
         goto done;
     }
 
+    *pbytes_read = nr_bytes;
+
 done:
     return ret;
 }
@@ -77,6 +79,7 @@ aresult_t _file_read_cs8(struct file_worker_thread *rx, struct sample_buf *sbuf)
 
     /* Read into bounce buffer */
     if (FAILED(ret = __file_read_bytes(rx, rx->bounce_buf, rx->bounce_buf_bytes, &nr_read))) {
+        DIAG("Failed to read from file, aborting.");
         goto done;
     }
 
@@ -98,6 +101,8 @@ aresult_t _file_read_cs8(struct file_worker_thread *rx, struct sample_buf *sbuf)
     for (size_t i = 0; i < rem; i++) {
         out_buf[nr_read - rem + i] = in_buf[nr_read - rem + i];
     }
+
+    DIAG("Read %zu bytes from input file", nr_read);
 
     /* Ensure we mark the buffer only for the number of samples actually available */
     sbuf->nr_samples = nr_read/2;
@@ -168,13 +173,19 @@ aresult_t _file_worker_thread_work(struct receiver *rx)
 
         /* Read in a sample buffer */
         struct sample_buf *sbuf = NULL;
-        TSL_BUG_IF_FAILED(receiver_sample_buf_alloc(rx, &sbuf));
+        if (FAILED(receiver_sample_buf_alloc(rx, &sbuf))) {
+            /* TODO: we need to make this saner */
+            usleep(500000);
+            continue;
+        }
 
         TSL_BUG_ON(NULL == thr->read_call);
         if (FAILED(ret = thr->read_call(thr, sbuf))) {
             /* Chances are we ran out of samples to process */
             goto done;
         }
+
+        DIAG("There are %u samples in the input read sample buffer", sbuf->nr_samples);
 
         /* Deliver the sample buffer */
         TSL_BUG_IF_FAILED(receiver_sample_buf_deliver(rx, sbuf));
@@ -281,8 +292,10 @@ aresult_t file_worker_thread_new(struct receiver **pthr, struct config *cfg)
         switch (sample_format) {
         case FILE_WORKER_SAMPLE_FORMAT_S8:
             thr->read_call = _file_read_cs8;
+            break;
         case FILE_WORKER_SAMPLE_FORMAT_U8:
             thr->read_call = _file_read_cu8;
+            break;
         default:
             PANIC("Sample format is corrupted, aborting.");
         }

@@ -1,0 +1,17 @@
+{
+  "device" : {
+    "type" : "file",
+    "filename" : "/home/pvachon/Downloads/goes13-2/2010-09-24-goes-13_2-8bit-01.dat",
+    "fileFormat" : "cs8"
+  },
+  "sampleRateHz" : 8738133,
+  "centerFreqHz" : 1692000000,
+  "nrSampBufs" : 128,
+  "decimationFactor" : 1,
+  "channels" : [
+    {
+      "outFifo" : "/home/pvachon/ch0.out",
+      "chanCenterFreq" :  1691000000
+    }
+  ]
+}
