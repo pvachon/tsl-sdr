@@ -33,6 +33,11 @@ struct receiver {
     size_t nr_demod_threads;
 
     /**
+     * Number of failed sample buffer allocations
+     */
+    size_t nr_samp_buf_alloc_fails;
+
+    /**
      * Frame allocator of sample buffers
      */
     struct frame_alloc *samp_alloc;

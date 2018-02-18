@@ -95,6 +95,11 @@ struct demod_thread {
     size_t total_nr_pcm_samples;
 
     /**
+     * Number of samples dropped on the floor
+     */
+    size_t nr_dropped_samples;
+
+    /**
      * Number of FM signal samples available
      */
     size_t nr_fm_samples;

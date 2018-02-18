@@ -55,7 +55,10 @@ aresult_t receiver_sample_buf_alloc(struct receiver *rx, struct sample_buf **pbu
 
     /* Allocate an output buffer */
     if (FAILED(ret = frame_alloc(rx->samp_alloc, (void **)&sbuf))) {
-        MFM_MSG(SEV_INFO, "NO-SAMPLE-BUFFER", "Out of sample buffers.");
+        if (0 == rx->nr_samp_buf_alloc_fails) {
+            MFM_MSG(SEV_INFO, "NO-SAMPLE-BUFFER", "There are no available sample buffers, dropping received samples.");
+        }
+        rx->nr_samp_buf_alloc_fails++;
         goto done;
     }
 

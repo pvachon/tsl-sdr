@@ -130,8 +130,21 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         /* x. Write out the resulting PCM samples */
         if (0 > write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(int16_t))) {
             int errnum = errno;
-            PANIC("Failed to write %zu bytes to the output fifo. Reason: %s (%d)", sizeof(int16_t) * dthr->nr_pcm_samples,
-                    strerror(errnum), errnum);
+            if (errnum == EPIPE) {
+                if (0 == dthr->nr_dropped_samples) {
+                    MFM_MSG(SEV_WARNING, "FIFO-REMOTE-END-DISCONNECTED", "Remote end of FIFO disconnected. "
+                            "Until a process picks up the FIFO, we're dropping samples.");
+                }
+                dthr->nr_dropped_samples += dthr->nr_pcm_samples;
+            } else {
+                PANIC("Failed to write %zu bytes to the output fifo. Reason: %s (%d)",
+                        sizeof(int16_t) * dthr->nr_pcm_samples,
+                        strerror(errnum), errnum);
+            }
+        } else if (0 != dthr->nr_dropped_samples) {
+            MFM_MSG(SEV_WARNING, "FIFO-RESUMED", "Remote FIFO end reconnected. Dropped %zu samples in the interim.",
+                    dthr->nr_dropped_samples);
+            dthr->nr_dropped_samples = 0;
         }
 
         TSL_BUG_IF_FAILED(direct_fir_can_process(&dthr->fir, &can_process, NULL));

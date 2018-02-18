@@ -22,16 +22,17 @@
  */
 
 #include <multifm/multifm.h>
-#if HAVE_RTLSDR
+
+#ifdef HAVE_RTLSDR
 #include <multifm/rtl_sdr_if.h>
 #include <rtl-sdr.h>
 #endif /* HAVE_RTLSDR */
 
-#if HAVE_DESPAIRSPY
+#ifdef HAVE_DESPAIRSPY
 #include <multifm/airspy_if.h>
 #endif
 
-#if HAVE_UHD
+#ifdef HAVE_UHD
 #include <multifm/uhd_if.h>
 #endif
 
@@ -126,21 +127,21 @@ int main(int argc, const char *argv[])
 
     /* Prepare the RTL-SDR thread and demod threads */
     if (!strncmp(dev_type, "rtlsdr", 6)) {
-#if HAVE_RTLSDR
+#ifdef HAVE_RTLSDR
         TSL_BUG_IF_FAILED(rtl_sdr_worker_thread_new(&rx_thr, cfg));
 #else
         MFM_MSG(SEV_FATAL, "RTLSDR-NOT-SUPPORTED", "RTL-SDR devices are not supported by this build.");
         goto done;
 #endif
     } else if (!strncmp(dev_type, "airspy", 6)) {
-#if HAVE_DESPAIRSPY
+#ifdef HAVE_DESPAIRSPY
         TSL_BUG_IF_FAILED(airspy_worker_thread_new(&rx_thr, cfg));
 #else
         MFM_MSG(SEV_FATAL, "AIRSPY-NOT-SUPPORTED", "Airspy devices are not supported by this build.");
         goto done;
 #endif
     } else if (!strncmp(dev_type, "usrp", 4)) {
-#if HAVE_UHD
+#ifdef HAVE_UHD
         TSL_BUG_IF_FAILED(uhd_worker_thread_new(&rx_thr, cfg));
 #else
         MFM_MSG(SEV_FATAL, "USRP-NOT-SUPPORTED", "USRP devices are not supported by this build.");
