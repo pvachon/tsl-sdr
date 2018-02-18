@@ -1,5 +1,5 @@
 /*
- *  depager.c - Demodulate and decode FLEX pager transmissions
+ *  decoder.c - Demodulate and decode various FSK transmissions
  *
  *  Copyright (c)2017 Phil Vachon <phil@security-embedded.com>
  *
@@ -22,6 +22,8 @@
 #include <pager/pager_flex.h>
 #include <pager/pager_pocsag.h>
 
+#include <ais/ais_decode.h>
+
 #include <filter/filter.h>
 #include <filter/sample_buf.h>
 #include <filter/complex.h>
@@ -43,15 +45,16 @@
 #include <ctype.h>
 #include <time.h>
 
-#define DEP_MSG(sev, sys, msg, ...) MESSAGE("DEPAGER", sev, sys, msg, ##__VA_ARGS__)
+#define DEC_MSG(sev, sys, msg, ...) MESSAGE("DECODER", sev, sys, msg, ##__VA_ARGS__)
 
-enum depager_pager_type {
-    DEPAGER_PAGER_TYPE_FLEX = 0,
-    DEPAGER_PAGER_TYPE_POCSAG = 1,
+enum decoder_decoder_type {
+    DECODER_PAGER_TYPE_FLEX = 0,
+    DECODER_PAGER_TYPE_POCSAG = 1,
+    DECODER_PROTO_TYPE_AIS = 2,
 };
 
 static
-enum depager_pager_type _pager_type = DEPAGER_PAGER_TYPE_FLEX;
+enum decoder_decoder_type _decoder_type = DECODER_PAGER_TYPE_FLEX;
 
 static
 unsigned interpolate = 1;
@@ -78,13 +81,16 @@ static
 bool dc_blocker = false;
 
 static
-unsigned pager_freq = 0;
+unsigned center_freq = 0;
 
 static
 struct pager_flex *flex = NULL;
 
 static
 struct pager_pocsag *pocsag = NULL;
+
+static
+struct ais_decode *ais_decode = NULL;
 
 static
 int sample_debug_fd = -1;
@@ -98,14 +104,15 @@ bool _invert = false;
 static
 void _usage(const char *appname)
 {
-    DEP_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -d [sample_debug_file] -S [input sample rate] -f [pager chan freq] [-c] [-o output JSON file] [-b] [-i] [in_fifo]",
+    DEC_MSG(SEV_INFO, "USAGE", "%s -I [interpolate] -D [decimate] -F [filter file] -d [sample_debug_file] -S [input sample rate] -f [center freq] [-c] [-o output JSON file] [-b] [-i] [in_fifo]",
             appname);
-    DEP_MSG(SEV_INFO, "USAGE", "        -b        Enable DC blocking filter       ");
-    DEP_MSG(SEV_INFO, "USAGE", "        -c        Create JSON output file         ");
-    DEP_MSG(SEV_INFO, "USAGE", "        -i        Invert input sample stream      ");
-    DEP_MSG(SEV_INFO, "USAGE", "        -m [type] Specify pager protocol to use   ");
-    DEP_MSG(SEV_INFO, "USAGE", "           POCSAG - the POCSAG pager protocol     ");
-    DEP_MSG(SEV_INFO, "USAGE", "           FLEX   - Motorola FLEX pager protocol  ");
+    DEC_MSG(SEV_INFO, "USAGE", "        -b        Enable DC blocking filter          ");
+    DEC_MSG(SEV_INFO, "USAGE", "        -c        Create JSON output file            ");
+    DEC_MSG(SEV_INFO, "USAGE", "        -i        Invert input sample stream         ");
+    DEC_MSG(SEV_INFO, "USAGE", "        -m [type] Specify protocol to decode         ");
+    DEC_MSG(SEV_INFO, "USAGE", "           POCSAG - the POCSAG pager protocol        ");
+    DEC_MSG(SEV_INFO, "USAGE", "           FLEX   - Motorola FLEX pager protocol     ");
+    DEC_MSG(SEV_INFO, "USAGE", "           AIS    - Automatic Identification System  ");
     exit(EXIT_SUCCESS);
 }
 
@@ -121,7 +128,7 @@ static
 FILE *out_file = NULL;
 
 static inline
-void _depager_put_alnum_char(FILE *fp, char ch)
+void _decoder_put_alnum_char(FILE *fp, char ch)
 {
     switch (ch) {
     case '\n':
@@ -188,7 +195,7 @@ aresult_t _on_flex_alnum_msg(
             fragmented ? "true" : "false", maildrop ? "true" : "false", seq_num);
 
     for (size_t i = 0; i < message_len; i++) {
-        _depager_put_alnum_char(out_file, message_bytes[i]);
+        _decoder_put_alnum_char(out_file, message_bytes[i]);
     }
 
     fprintf(out_file, "\"}\n");
@@ -218,7 +225,7 @@ aresult_t _on_flex_num_msg(
             baud, 0, frame_no, cycle_no, phase_id[phase], cap_code);
 
     for (size_t i = 0; i < message_len; i++) {
-        _depager_put_alnum_char(out_file, message_bytes[i]);
+        _decoder_put_alnum_char(out_file, message_bytes[i]);
     }
 
     fprintf(out_file, "\"}\n");
@@ -272,7 +279,7 @@ aresult_t _on_pocsag_alnum_msg(
             baud_rate, capcode, (unsigned)function);
 
     for (size_t i = 0; i < data_len; i++) {
-        _depager_put_alnum_char(out_file, data[i]);
+        _decoder_put_alnum_char(out_file, data[i]);
     }
 
     fprintf(out_file, "\"}\n");
@@ -300,7 +307,7 @@ aresult_t _on_pocsag_num_msg(
             baud_rate, capcode, (unsigned)function);
 
     for (size_t i = 0; i < data_len; i++) {
-        _depager_put_alnum_char(out_file, data[i]);
+        _decoder_put_alnum_char(out_file, data[i]);
     }
 
     fprintf(out_file, "\"}\n");
@@ -309,6 +316,81 @@ aresult_t _on_pocsag_num_msg(
     return A_OK;
 }
 
+static
+aresult_t _on_ais_position_report(struct ais_decode *decode, void *state, struct ais_position_report *pr, const char *raw_msg)
+{
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+
+    fprintf(out_file,
+            "{\"proto\":\"ais\",\"type\":\"positionReport\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+            "\"mmsi\":%u,\"navStat\":%u,\"rateOfTurn\":%d,\"speedOverGround\":%f,\"positionAcc\":%u,"
+            "\"geoPosition\":{\"lon\":%f,\"lat\":%f},\"course\":%u,\"heading\":%u,\"seconds\":%u,\"rawAscii\":\"",
+            gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+            pr->mmsi, pr->nav_stat, pr->rate_of_turn, (double)pr->speed_over_ground, pr->position_acc,
+            (double)pr->longitude, (double)pr->latitude, pr->course, pr->heading, pr->timestamp);
+
+    for (size_t i = 0; i < strlen(raw_msg); i++) {
+        _decoder_put_alnum_char(out_file, raw_msg[i]);
+    }
+
+    fprintf(out_file, "\"}\n");
+
+    return A_OK;
+}
+
+static
+aresult_t _on_ais_base_station_report(struct ais_decode *decode, void *state, struct ais_base_station_report *br,
+        const char *raw_msg)
+{
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+
+    fprintf(out_file,
+            "{\"proto\":\"ais\",\"type\":\"baseStationReport\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+            "\"mmsi\":%u,\"baseStationDate\":\"%04u-%02u-%02u %02u:%02u:%02u UTC\","
+            "\"geoPosition\":{\"lon\":%f,\"lat\":%f},\"fixType\":\"%s\",\"rawAscii\":\"",
+            gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+            br->mmsi, br->year, br->month, br->day, br->hour, br->minute, br->second,
+            (double)br->longitude, (double)br->latitude, br->epfd_name);
+
+    for (size_t i = 0; i < strlen(raw_msg); i++) {
+        _decoder_put_alnum_char(out_file, raw_msg[i]);
+    }
+
+    fprintf(out_file, "\"}\n");
+
+    return A_OK;
+}
+
+static
+aresult_t _on_ais_static_voyage_data(struct ais_decode *decode, void *state, struct ais_static_voyage_data *svd,
+        const char *raw_msg)
+{
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+
+    /* TODO: Ensure we escape the callsign, ship name and destination */
+
+    fprintf(out_file,
+            "{\"proto\":\"ais\",\"type\":\"staticAndVoyageData\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
+            "\"mmsi\":%u,\"version\":%u,\"imoNumber\":%u,\"callsign\":\"%s\",\"shipName\":\"%s\","
+            "\"shipType\":%u,\"dimensions\":{\"toBow\":%u,\"toStern\":%u,\"toPort\":%u,\"toStarboard\":%u},"
+            "\"fixType\":\"%s\",\"eta\":\"%02u-%02u %02u:%02u\",\"draught\":%f,\"destination\":\"%s\","
+            "\"rawAscii\":\"",
+            gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+            svd->mmsi, svd->version, svd->imo_number, svd->callsign, svd->ship_name,
+            svd->ship_type, svd->dim_to_bow, svd->dim_to_stern, svd->dim_to_port, svd->dim_to_starboard,
+            svd->epfd_name, svd->eta_month, svd->eta_day, svd->eta_hour, svd->eta_minute, svd->draught, svd->destination);
+
+    for (size_t i = 0; i < strlen(raw_msg); i++) {
+        _decoder_put_alnum_char(out_file, raw_msg[i]);
+    }
+
+    fprintf(out_file, "\"}\n");
+
+    return A_OK;
+}
 
 static
 void _set_options(int argc, char * const argv[])
@@ -329,7 +411,7 @@ void _set_options(int argc, char * const argv[])
             create_out = true;
             break;
         case 'f':
-            pager_freq = strtoll(optarg, NULL, 0);
+            center_freq = strtoll(optarg, NULL, 0);
             break;
         case 'I':
             interpolate = strtoll(optarg, NULL, 0);
@@ -345,13 +427,13 @@ void _set_options(int argc, char * const argv[])
             break;
         case 'b':
             dc_blocker = true;
-            DEP_MSG(SEV_INFO, "DC-BLOCKER-ENABLED", "Enabling DC Blocking Filter.");
+            DEC_MSG(SEV_INFO, "DC-BLOCKER-ENABLED", "Enabling DC Blocking Filter.");
             break;
 
         case 'd':
             if (0 > (sample_debug_fd = open(optarg, O_WRONLY | O_CREAT, 0666))) {
                 int errnum = errno;
-                DEP_MSG(SEV_ERROR, "FAIL-DEBUG-FILE", "Failed to open debug output file %s: %s (%d)",
+                DEC_MSG(SEV_ERROR, "FAIL-DEBUG-FILE", "Failed to open debug output file %s: %s (%d)",
                         optarg, strerror(errnum), errnum);
                 exit(EXIT_FAILURE);
             }
@@ -359,23 +441,25 @@ void _set_options(int argc, char * const argv[])
 
         case 'm':
             if (!strncasecmp(optarg, "pocsag", 6)) {
-                _pager_type = DEPAGER_PAGER_TYPE_POCSAG;
+                _decoder_type = DECODER_PAGER_TYPE_POCSAG;
             } else if (!strncasecmp(optarg, "flex", 4)) {
-                _pager_type = DEPAGER_PAGER_TYPE_FLEX;
+                _decoder_type = DECODER_PAGER_TYPE_FLEX;
+            } else if (!strncasecmp(optarg, "ais", 3)) {
+                _decoder_type = DECODER_PROTO_TYPE_AIS;
             } else {
-                DEP_MSG(SEV_ERROR, "UNKNOWN-PAGER-TYPE", "Unknown pager type specified: %s", optarg);
+                DEC_MSG(SEV_ERROR, "UNKNOWN-PROTOCOL-TYPE", "Unknown protocol type specified: %s", optarg);
                 exit(EXIT_FAILURE);
             }
             break;
 
         case 'p':
             dc_block_pole = strtod(optarg, NULL);
-            DEP_MSG(SEV_INFO, "DC-BLOCK-POLE", "Setting DC Blocker pole to %f", dc_block_pole);
+            DEC_MSG(SEV_INFO, "DC-BLOCK-POLE", "Setting DC Blocker pole to %f", dc_block_pole);
             break;
 
         case 'i':
             _invert = true;
-            DEP_MSG(SEV_INFO, "INVERTING", "Inverting input sample stream, due to a non-phase correcting input source.");
+            DEC_MSG(SEV_INFO, "INVERTING", "Inverting input sample stream, due to a non-phase correcting input source.");
             break;
 
         case 'h':
@@ -385,56 +469,56 @@ void _set_options(int argc, char * const argv[])
     }
 
     if (optind > argc) {
-        DEP_MSG(SEV_FATAL, "MISSING-SRC-DEST", "Missing source/destination file");
+        DEC_MSG(SEV_FATAL, "MISSING-SRC-DEST", "Missing source/destination file");
         exit(EXIT_FAILURE);
     }
 
     if (0 == decimate) {
-        DEP_MSG(SEV_FATAL, "BAD-DECIMATION", "Decimation factor must be a non-zero integer.");
+        DEC_MSG(SEV_FATAL, "BAD-DECIMATION", "Decimation factor must be a non-zero integer.");
         exit(EXIT_FAILURE);
     }
 
     if (0 == decimate) {
-        DEP_MSG(SEV_FATAL, "BAD-INTERPOLATION", "Interpolation factor must be a non-zero integer.");
+        DEC_MSG(SEV_FATAL, "BAD-INTERPOLATION", "Interpolation factor must be a non-zero integer.");
         exit(EXIT_FAILURE);
     }
 
-    if (0 == pager_freq) {
-        DEP_MSG(SEV_FATAL, "BAD-PAGER-FREQ", "Pager frequency must be non-zero");
+    if (0 == center_freq) {
+        DEC_MSG(SEV_FATAL, "BAD-PAGER-FREQ", "Pager frequency must be non-zero");
         exit(EXIT_FAILURE);
     }
 
     if (NULL == filter_file) {
-        DEP_MSG(SEV_FATAL, "BAD-FILTER-FILE", "Need to specify a filter JSON file.");
+        DEC_MSG(SEV_FATAL, "BAD-FILTER-FILE", "Need to specify a filter JSON file.");
         exit(EXIT_FAILURE);
     }
 
     if (NULL == out_file_name) {
-        DEP_MSG(SEV_INFO, "WRITE-TO-STDOUT", "Output decoded data is going to stdout.");
+        DEC_MSG(SEV_INFO, "WRITE-TO-STDOUT", "Output decoded data is going to stdout.");
         out_file = stdout;
     } else {
         if (create_out) {
-            DEP_MSG(SEV_INFO, "CREATING-OUTPUT", "Creating output file '%s', will overwrite if it exists",
+            DEC_MSG(SEV_INFO, "CREATING-OUTPUT", "Creating output file '%s', will overwrite if it exists",
                     out_file_name);
         } else {
-            DEP_MSG(SEV_INFO, "OPENING-OUTPUT", "Opening output file '%s', will append to end if it exists",
+            DEC_MSG(SEV_INFO, "OPENING-OUTPUT", "Opening output file '%s', will append to end if it exists",
                     out_file_name);
         }
         if (NULL == (out_file = fopen(out_file_name, create_out ? "w+" : "a"))) {
-            DEP_MSG(SEV_INFO, "BAD-OUTPUT-FILE", "Failed to open output file '%s', aborting.",
+            DEC_MSG(SEV_INFO, "BAD-OUTPUT-FILE", "Failed to open output file '%s', aborting.",
                     out_file_name);
             exit(EXIT_FAILURE);
         }
     }
 
-    DEP_MSG(SEV_INFO, "CONFIG", "Resampling: %u/%u from %u to %f", interpolate, decimate, input_sample_rate,
+    DEC_MSG(SEV_INFO, "CONFIG", "Resampling: %u/%u from %u to %f", interpolate, decimate, input_sample_rate,
             ((double)interpolate/(double)decimate)*(double)input_sample_rate);
-    DEP_MSG(SEV_INFO, "CONFIG", "Loading filter coefficients from '%s'", filter_file);
+    DEC_MSG(SEV_INFO, "CONFIG", "Loading filter coefficients from '%s'", filter_file);
 
     TSL_BUG_IF_FAILED(config_new(&cfg));
 
     if (FAILED(config_add(cfg, filter_file))) {
-        DEP_MSG(SEV_INFO, "BAD-CONFIG", "Configuration file '%s' cannot be processed, aborting.",
+        DEC_MSG(SEV_INFO, "BAD-CONFIG", "Configuration file '%s' cannot be processed, aborting.",
                 filter_file);
         exit(EXIT_FAILURE);
     }
@@ -448,7 +532,7 @@ void _set_options(int argc, char * const argv[])
     }
 
     if (0 > (in_fifo = open(argv[optind], O_RDONLY))) {
-        DEP_MSG(SEV_INFO, "BAD-INPUT", "Bad input - cannot open %s", argv[optind]);
+        DEC_MSG(SEV_INFO, "BAD-INPUT", "Bad input - cannot open %s", argv[optind]);
         exit(EXIT_FAILURE);
     }
 }
@@ -522,7 +606,7 @@ aresult_t process_samples(void)
             if (0 >= (op_ret = read(in_fifo, (uint8_t *)read_buf->data_buf + nr_sample_bytes, read_buf->sample_buf_bytes - nr_sample_bytes))) {
                 int errnum = errno;
                 ret = A_E_INVAL;
-                DEP_MSG(SEV_FATAL, "READ-FIFO-FAIL", "Failed to read from input fifo: %s (%d)",
+                DEC_MSG(SEV_FATAL, "READ-FIFO-FAIL", "Failed to read from input fifo: %s (%d)",
                         strerror(errnum), errnum);
                 goto done;
             }
@@ -557,18 +641,22 @@ aresult_t process_samples(void)
             TSL_BUG_IF_FAILED(dc_blocker_apply(&blck, output_buf, new_samples));
         }
 
-        /* Process with the pager object */
-        if (_pager_type == DEPAGER_PAGER_TYPE_FLEX) {
+        /* Process with the protocol object */
+        if (_decoder_type == DECODER_PAGER_TYPE_FLEX) {
             TSL_BUG_IF_FAILED(pager_flex_on_pcm(flex, output_buf, new_samples));
-        } else {
+        } else if (_decoder_type == DECODER_PAGER_TYPE_POCSAG) {
             TSL_BUG_IF_FAILED(pager_pocsag_on_pcm(pocsag, output_buf, new_samples));
+        } else if (_decoder_type == DECODER_PROTO_TYPE_AIS) {
+            TSL_BUG_IF_FAILED(ais_decode_on_pcm(ais_decode, output_buf, new_samples));
+        } else {
+            PANIC("Unknown decoder type, aborting");
         }
 
         /* If a sample debug file was specified, write to the sample debug file */
         if (-1 != sample_debug_fd) {
             if (0 > write(sample_debug_fd, output_buf, new_samples * sizeof(int16_t))) {
                 int errnum = errno;
-                DEP_MSG(SEV_FATAL, "WRITE-DEBUG-FAIL", "Failed to write to output debug file: %s (%d)",
+                DEC_MSG(SEV_FATAL, "WRITE-DEBUG-FAIL", "Failed to write to output debug file: %s (%d)",
                         strerror(errnum), errnum);
             }
         }
@@ -592,19 +680,22 @@ int main(int argc, char * const argv[])
     /* Create the polyphase resampling filter */
     TSL_BUG_IF_FAILED(polyphase_fir_new(&pfir, nr_filter_coeffs, filter_coeffs, interpolate, decimate));
 
-    /* Set up the appropriate pager protocol decoder */
-    if (_pager_type == DEPAGER_PAGER_TYPE_FLEX) {
-        DEP_MSG(SEV_INFO, "PROTOCOL", "Using the Motorola FLEX pager protocol.");
-        TSL_BUG_IF_FAILED(pager_flex_new(&flex, pager_freq, _on_flex_alnum_msg, _on_flex_num_msg, _on_flex_siv_msg));
-    } else if (_pager_type == DEPAGER_PAGER_TYPE_POCSAG) {
-        DEP_MSG(SEV_INFO, "PROTOCOL", "Using the POCSAG Pager Protocol.");
-        TSL_BUG_IF_FAILED(pager_pocsag_new(&pocsag, pager_freq, _on_pocsag_num_msg, _on_pocsag_alnum_msg));
+    /* Set up the appropriate protocol decoder */
+    if (_decoder_type == DECODER_PAGER_TYPE_FLEX) {
+        DEC_MSG(SEV_INFO, "PROTOCOL", "Using the Motorola FLEX pager protocol.");
+        TSL_BUG_IF_FAILED(pager_flex_new(&flex, center_freq, _on_flex_alnum_msg, _on_flex_num_msg, _on_flex_siv_msg));
+    } else if (_decoder_type == DECODER_PAGER_TYPE_POCSAG) {
+        DEC_MSG(SEV_INFO, "PROTOCOL", "Using the POCSAG Pager Protocol.");
+        TSL_BUG_IF_FAILED(pager_pocsag_new(&pocsag, center_freq, _on_pocsag_num_msg, _on_pocsag_alnum_msg));
+    } else if (_decoder_type == DECODER_PROTO_TYPE_AIS) {
+        DEC_MSG(SEV_INFO, "PROTOCOL", "Using the AIS Message Format.");
+        TSL_BUG_IF_FAILED(ais_decode_new(&ais_decode, center_freq, _on_ais_position_report, _on_ais_base_station_report, _on_ais_static_voyage_data));
     }
 
-    DEP_MSG(SEV_INFO, "STARTING", "Starting pager message decoder on frequency %u Hz.", pager_freq);
+    DEC_MSG(SEV_INFO, "STARTING", "Starting message decoder on frequency %u Hz.", center_freq);
 
     if (FAILED(process_samples())) {
-        DEP_MSG(SEV_FATAL, "FIR-FAILED", "Failed during pager processing, aborting.");
+        DEC_MSG(SEV_FATAL, "FIR-FAILED", "Failed during message processing, aborting.");
         goto done;
     }
 
@@ -621,6 +712,10 @@ done:
 
     if (NULL != pocsag) {
         pager_pocsag_delete(&pocsag);
+    }
+
+    if (NULL != ais_decode) {
+        ais_decode_delete(&ais_decode);
     }
 
     if (NULL != pfir) {
