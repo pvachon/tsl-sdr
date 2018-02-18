@@ -57,14 +57,14 @@ typedef int32_t aresult_t;
 /** \brief Determine if an error condition has been signalled
  * Return 1 if the provided code indicates an error, 0 otherwise.
  */
-#define FAILED(x) (!!((x) & (1 << ARESULT_ERROR_BIT)))
+#define FAILED(x) (CAL_UNLIKELY((!!((x) & (1 << ARESULT_ERROR_BIT)))))
 
 /** \brief Determine if an unlikely error condition was signalled
  * Return 1 if the provided code indicates an error, 0 otherwise. Tag
  * the branch with an UNLIKELY tag, as to provide an optimization hint
  * to the compiler.
  */
-#define FAILED_UNLIKELY(x) (CAL_UNLIKELY(FAILED((x))))
+#define FAILED_UNLIKELY(x) (FAILED(x))
 
 /**
  * \brief Generate a new aresult_t code.

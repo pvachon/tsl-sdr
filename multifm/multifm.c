@@ -35,6 +35,8 @@
 #include <multifm/uhd_if.h>
 #endif
 
+#include <multifm/file_if.h>
+
 #include <multifm/receiver.h>
 
 #include <filter/sample_buf.h>
@@ -144,6 +146,9 @@ int main(int argc, const char *argv[])
         MFM_MSG(SEV_FATAL, "USRP-NOT-SUPPORTED", "USRP devices are not supported by this build.");
         goto done;
 #endif
+    } else if (!strncmp(dev_type, "file", 4)) {
+        /* Source samples from a binary file o' samples */
+        TSL_BUG_IF_FAILED(file_worker_thread_new(&rx_thr, cfg));
     } else {
         MFM_MSG(SEV_FATAL, "UNKNOWN-DEV-TYPE", "Unknown device type: '%s'", dev_type);
         goto done;
