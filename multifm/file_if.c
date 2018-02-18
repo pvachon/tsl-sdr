@@ -107,6 +107,51 @@ done:
 }
 
 static
+aresult_t _file_read_cu8(struct file_worker_thread *rx, struct sample_buf *sbuf)
+{
+    aresult_t ret = A_OK;
+
+    size_t nr_read = 0,
+           rem = 0;
+
+    int8_t *in_buf = NULL;
+    int16_t *out_buf = NULL;
+
+    TSL_ASSERT_ARG(NULL != rx);
+    TSL_ASSERT_ARG(NULL != sbuf);
+
+    /* Read into bounce buffer */
+    if (FAILED(ret = __file_read_bytes(rx, rx->bounce_buf, rx->bounce_buf_bytes, &nr_read))) {
+        goto done;
+    }
+
+    TSL_BUG_ON(nr_read > rx->bounce_buf_bytes);
+
+    in_buf = rx->bounce_buf;
+    out_buf = (int16_t *)sbuf->data_buf;
+
+    /* Convert to s16 just through a cast, then subtracting 127 (assumes input is [0, 255]) */
+    for (size_t i = 0; i < nr_read; i += 4) {
+        out_buf[i + 0] = (int16_t)in_buf[i + 0] - 127;
+        out_buf[i + 1] = (int16_t)in_buf[i + 1] - 127;
+        out_buf[i + 2] = (int16_t)in_buf[i + 2] - 127;
+        out_buf[i + 3] = (int16_t)in_buf[i + 3] - 127;
+    }
+
+    rem = nr_read % 4;
+
+    for (size_t i = 0; i < rem; i++) {
+        out_buf[nr_read - rem + i] = in_buf[nr_read - rem + i];
+    }
+
+    /* Ensure we mark the buffer only for the number of samples actually available */
+    sbuf->nr_samples = nr_read/2;
+
+done:
+    return ret;
+}
+
+static
 aresult_t _file_worker_thread_work(struct receiver *rx)
 {
     aresult_t ret = A_OK;
@@ -152,7 +197,20 @@ aresult_t _file_worker_thread_cleanup(struct receiver *rx)
 {
     aresult_t ret = A_OK;
 
+    struct file_worker_thread *fwt = NULL;
+
     TSL_ASSERT_ARG(NULL != rx);
+
+    fwt = BL_CONTAINER_OF(rx, struct file_worker_thread, rcvr);
+
+    if (0 >= fwt->fd) {
+        close(fwt->fd);
+        fwt->fd = -1;
+    }
+
+    if (NULL != fwt->bounce_buf) {
+        TFREE(fwt->bounce_buf);
+    }
 
     return ret;
 }
@@ -166,6 +224,7 @@ aresult_t file_worker_thread_new(struct receiver **pthr, struct config *cfg)
     const char *filename = NULL,
                *format = NULL;
     struct config devcfg = CONFIG_INIT_EMPTY;
+    enum file_worker_sample_format sample_format = FILE_WORKER_SAMPLE_FORMAT_UNKNOWN;
 
     TSL_ASSERT_ARG(NULL != pthr);
     TSL_ASSERT_ARG(NULL != cfg);
@@ -185,7 +244,13 @@ aresult_t file_worker_thread_new(struct receiver **pthr, struct config *cfg)
     }
 
     /* Validate that the format is supported */
-    if (!(strncmp(format, "cs16", 4) || strncmp(format, "cs8", 3))) {
+    if (!strncmp(format, "cs16", 4)) {
+        sample_format = FILE_WORKER_SAMPLE_FORMAT_S16;
+    } else if (!strncmp(format, "cs8", 3)) {
+        sample_format = FILE_WORKER_SAMPLE_FORMAT_S8;
+    } else if (!strncmp(format, "cu8", 3)) {
+        sample_format = FILE_WORKER_SAMPLE_FORMAT_U8;
+    } else {
         FL_MSG(SEV_FATAL, "UNSUPPORTED-FILE-FORMAT", "File format [%s] is not supported, aborting.",
                 format);
         ret = A_E_INVAL;
@@ -198,7 +263,8 @@ aresult_t file_worker_thread_new(struct receiver **pthr, struct config *cfg)
     /* Try to open the file */
     if (0 > (fd = open(filename, O_RDONLY))) {
         int errnum = errno;
-        FL_MSG(SEV_FATAL, "BAD-FILE", "Unable to open file [%s], aborting.", filename);
+        FL_MSG(SEV_FATAL, "BAD-FILE", "Unable to open file [%s], aborting. Reason: %s (%d)",
+                filename, strerror(errnum), errnum);
         ret = A_E_INVAL;
         goto done;
     }
@@ -208,17 +274,25 @@ aresult_t file_worker_thread_new(struct receiver **pthr, struct config *cfg)
     }
 
     thr->fd = fd;
+    thr->sample_format = sample_format;
 
-    if (!strncmp(format, "cs8", 3)) {
-        DIAG("Creating bounce buffer, cs8 format requires conversion.");
-        thr->read_call = _file_read_cs8;
+    if (sample_format == FILE_WORKER_SAMPLE_FORMAT_S8 || sample_format == FILE_WORKER_SAMPLE_FORMAT_U8) {
+        DIAG("Creating bounce buffer, input format requires conversion.");
+        switch (sample_format) {
+        case FILE_WORKER_SAMPLE_FORMAT_S8:
+            thr->read_call = _file_read_cs8;
+        case FILE_WORKER_SAMPLE_FORMAT_U8:
+            thr->read_call = _file_read_cu8;
+        default:
+            PANIC("Sample format is corrupted, aborting.");
+        }
 
         if (FAILED(ret = TACALLOC(&thr->bounce_buf, SAMPLES_PER_BUF, 2 * sizeof(int8_t), SYS_CACHE_LINE_LENGTH))) {
             goto done;
         }
 
         thr->bounce_buf_bytes = SAMPLES_PER_BUF * 2 * sizeof(int8_t);
-    } else if (!strncmp(format, "cs16", 4)) {
+    } else if (sample_format == FILE_WORKER_SAMPLE_FORMAT_S16) {
         thr->read_call = _file_read_cs16;
     } else {
         FL_MSG(SEV_FATAL, "UNSUPPORTED-SAMPLE-FORMAT", "Sample format [%s] is not supported, aborting.", format);
