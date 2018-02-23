@@ -9,9 +9,10 @@
 
 #include <pthread.h>
 
-#define LPF_PCM_OUTPUT_LEN              1024
+#define LPF_OUTPUT_LEN              1024
 
 struct polyphase_fir;
+struct demod_base;
 
 /**
  * Demodulator thread context
@@ -28,21 +29,6 @@ struct demod_thread {
     struct direct_fir fir;
 
     /**
-     * An optional polyphase resampler.
-     */
-    struct polyphase_fir *pfir;
-
-    /**
-     * State for the DC blocker. Not used if DC blocker is disabled.
-     */
-    struct dc_blocker dc_blk;
-
-    /**
-     * Whether or not we want the DC blocker enabled
-     */
-    bool block_dc;
-
-    /**
      * The file descriptor for the output FIFO
      */
     int fifo_fd;
@@ -51,16 +37,6 @@ struct demod_thread {
      * The file descriptor for dumping the filtered signal
      */
     int debug_signal_fd;
-
-    /**
-     * The last FM sample of the prior buffer, I sample
-     */
-    int32_t last_fm_re;
-
-    /**
-     * The last FM sample of the prior buffer, Q sample
-     */
-    int32_t last_fm_im;
 
     /**
      * Mutex for the work queue. Always must be held while manipulating it.
@@ -80,14 +56,19 @@ struct demod_thread {
     struct worker_thread wthr;
 
     /**
+     * Demodulator state
+     */
+    struct demod_base *demod;
+
+    /**
      * Linked list node demodulator thread
      */
     struct list_entry dt_node;
 
     /**
-     * Total number of FM samples processed
+     * Total number of samples demodulated
      */
-    size_t total_nr_fm_samples;
+    size_t total_nr_demod_samples;
 
     /**
      * Total number of PCM samples generated
@@ -105,9 +86,9 @@ struct demod_thread {
     size_t nr_fm_samples;
 
     /**
-     * FM samples to be processed
+     * Filtered samples to be processed
      */
-    int16_t fm_samp_out_buf[2 * LPF_PCM_OUTPUT_LEN];
+    int16_t filt_samp_buf[2 * LPF_OUTPUT_LEN];
 
     /**
      * Number of good PCM samples
@@ -115,9 +96,9 @@ struct demod_thread {
     size_t nr_pcm_samples;
 
     /**
-     * Output PCM buffer
+     * Output demodulated sample buffer
      */
-    int16_t pcm_out_buf[LPF_PCM_OUTPUT_LEN];
+    int16_t out_buf[LPF_OUTPUT_LEN];
 };
 
 aresult_t demod_thread_delete(struct demod_thread **pthr);
@@ -131,11 +112,6 @@ aresult_t demod_thread_delete(struct demod_thread **pthr);
 aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
         const double *lpf_taps, size_t lpf_nr_taps,
-        unsigned resample_decimate, unsigned resample_interpolate, const int16_t *resample_filter_taps,
-        size_t nr_resample_filter_taps,
         const char *fir_debug_output,
-        double dc_block_pole, bool enable_dc_block,
         double channel_gain);
-
-float fast_atan2f(float y, float x);
 

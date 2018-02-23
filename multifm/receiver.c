@@ -105,22 +105,16 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
 
     double *lpf_taps = NULL,
            *resample_filter_taps CAL_CLEANUP(free_double_array) = NULL;
-    double dc_block_pole = 0.9999;
 
     size_t lpf_nr_taps = 0,
-           arr_ctr = 0,
-           nr_resample_filter_taps = 0;
+           arr_ctr = 0;
     int decimation_factor = 0,
-        resample_decimate = 0,
-        resample_interpolate = 0,
         nr_samp_bufs = 0,
         sample_rate = 0,
         center_freq = 0;
-    bool enable_dc_block = false;
     int16_t *resample_int_filter_taps CAL_CLEANUP(free_i16_array) = NULL;
 
-    struct config rational_resampler,
-                  channels,
+    struct config channels,
                   channel;
 
     struct frame_alloc *sample_buf_alloc = NULL;
@@ -189,66 +183,6 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
         goto done;
     }
 
-    /* Grab the rational resampler taps, if appropriate */
-    if (!FAILED(config_get(cfg, &rational_resampler, "rationalResampler"))) {
-        DIAG("Preparing the rational resampler.");
-
-        if (FAILED(ret = config_get_integer(&rational_resampler, &resample_decimate, "decimate"))) {
-            MFM_MSG(SEV_ERROR, "MISSING-DECIMATE", "Need to specify the decimation factor for the rational resampler.");
-            goto done;
-        }
-
-        if (0 >= resample_decimate) {
-            ret = A_E_INVAL;
-            MFM_MSG(SEV_ERROR, "BAD-DECIMATION-FACTOR", "The decimation factor for the rational resampler must be a non-zero positive integer.");
-            goto done;
-        }
-
-        if (FAILED(ret = config_get_integer(&rational_resampler, &resample_interpolate, "interpolate"))) {
-            MFM_MSG(SEV_ERROR, "MISSING-INTERPOLATE", "Need to specify the interpolation factor for the rational resampler.");
-            goto done;
-        }
-
-        if (0 >= resample_interpolate) {
-            ret = A_E_INVAL;
-            MFM_MSG(SEV_ERROR, "BAD-INTERPOLATION-FACTOR", "The interpolation factor for the rational resampler must be a non-zero positive integer.");
-            goto done;
-        }
-
-        if (FAILED(ret = config_get_float_array(&rational_resampler, &resample_filter_taps, &nr_resample_filter_taps, "lpfCoeffs"))) {
-            MFM_MSG(SEV_ERROR, "MISSING-RESAMPLE-FILTER-COEFF", "Missing filter coefficients for the resampling filter.");
-            goto done;
-        }
-
-        if (0 == nr_resample_filter_taps || resample_interpolate > nr_resample_filter_taps) {
-            ret = A_E_INVAL;
-            MFM_MSG(SEV_ERROR, "NO-RESAMPLE-TAPS", "Rational resampler filter taps must not be empty or there must be enough taps to perform an interpolation.");
-            goto done;
-        }
-
-        TSL_BUG_IF_FAILED(TCALLOC((void **)&resample_int_filter_taps, sizeof(int16_t), nr_resample_filter_taps));
-
-        for (size_t i = 0; i < nr_resample_filter_taps; i++) {
-            double q15 = 1 << Q_15_SHIFT;
-            resample_int_filter_taps[i] = resample_filter_taps[i] * q15;
-        }
-
-        TFREE(resample_filter_taps);
-
-        MFM_MSG(SEV_INFO, "RATIONAL-RESAMPLER", "Using Rational Resampler with to resample the output rate to %d/%d with %zu taps in filter.",
-                resample_interpolate, resample_decimate, nr_resample_filter_taps);
-    }
-
-    if (!FAILED(ret = config_get_boolean(cfg, &enable_dc_block, "enableDCBlocker"))) {
-        if (true == enable_dc_block) {
-            if (FAILED(ret = config_get_float(cfg, &dc_block_pole, "dcBlockerPole"))) {
-                dc_block_pole = 0.9999;
-            }
-
-            MFM_MSG(SEV_INFO, "DC-BLOCK-ENABLE", "Enabled DC Blocker. Using pole value %f.", dc_block_pole);
-        }
-    }
-
     list_init(&rx->demod_threads);
 
     /* Create the demodulator threads, walking the list of channels to be processed. */
@@ -292,10 +226,7 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
         /* Create demodulator thread object */
         if (FAILED(ret = demod_thread_new(&dmt, -1, (int32_t)nb_center_freq - center_freq,
                         sample_rate, fifo_name, decimation_factor, lpf_taps, lpf_nr_taps,
-                        resample_decimate, resample_interpolate, resample_int_filter_taps,
-                        nr_resample_filter_taps,
                         signal_debug,
-                        dc_block_pole, enable_dc_block,
                         channel_gain)))
         {
             MFM_MSG(SEV_ERROR, "FAILED-DEMOD-THREAD", "Failed to create demodulator thread, aborting.");

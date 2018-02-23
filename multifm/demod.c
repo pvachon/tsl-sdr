@@ -23,9 +23,10 @@
 #include <multifm/demod.h>
 #include <multifm/multifm.h>
 
+#include <multifm/fm_demod.h>
+
 #include <filter/direct_fir.h>
 #include <filter/sample_buf.h>
-#include <filter/polyphase_fir.h>
 #include <filter/complex.h>
 
 #include <tsl/frame_alloc.h>
@@ -33,7 +34,6 @@
 #include <tsl/assert.h>
 #include <tsl/diag.h>
 
-#include <math.h>
 #include <complex.h>
 #include <stdatomic.h>
 #include <errno.h>
@@ -61,18 +61,19 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
     TSL_BUG_ON(false == can_process);
 
     while (true == can_process) {
-        size_t nr_samples = 0;
+        size_t nr_samples = 0,
+               nr_processed_bytes = 0;
 
         /* 1. Filter using FIR, decimate by the specified factor. Iterate over the output
          *    buffer samples.
          */
-        TSL_BUG_IF_FAILED(direct_fir_process(&dthr->fir, dthr->fm_samp_out_buf + dthr->nr_fm_samples,
-                    LPF_PCM_OUTPUT_LEN - dthr->nr_fm_samples, &nr_samples));
+        TSL_BUG_IF_FAILED(direct_fir_process(&dthr->fir, dthr->filt_samp_buf + dthr->nr_fm_samples,
+                    LPF_OUTPUT_LEN - dthr->nr_fm_samples, &nr_samples));
 
-        dthr->total_nr_fm_samples += nr_samples;
+        dthr->total_nr_demod_samples += nr_samples;
 
         if (-1 != dthr->debug_signal_fd) {
-            if (0 > write(dthr->debug_signal_fd, dthr->fm_samp_out_buf + dthr->nr_fm_samples, nr_samples * 2 * sizeof(int16_t))) {
+            if (0 > write(dthr->debug_signal_fd, dthr->filt_samp_buf + dthr->nr_fm_samples, nr_samples * 2 * sizeof(int16_t))) {
                 int errnum = errno;
                 MFM_MSG(SEV_WARNING, "CANT-WRITE-DEBUG-FILE", "Unable to write %zu bytes to post-demod debug file. Reason: %s (%d). Skipping.",
                         nr_samples * 2 * sizeof(int16_t), strerror(errnum), errnum);
@@ -85,50 +86,11 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         /* TODO: smarten this up a lot - this sucks */
         dthr->nr_pcm_samples = 0;
 
-        const float to_q15 = (float)(1 << Q_15_SHIFT);
-
-        for (size_t i = 0; i < dthr->nr_fm_samples; i++) {
-            TSL_BUG_ON(LPF_PCM_OUTPUT_LEN <= dthr->nr_pcm_samples);
-            /* Get the complex conjugate of the prior sample, negating the phase term */
-            int32_t b_re =  dthr->last_fm_re,
-                    b_im = -dthr->last_fm_im,
-                    a_re =  dthr->fm_samp_out_buf[2 * i    ],
-                    a_im =  dthr->fm_samp_out_buf[2 * i + 1];
-            int32_t s_re = 0,
-                    s_im = 0;
-
-            /* Calculate the phase difference */
-            s_re = a_re * b_re - a_im * b_im;
-            s_im = a_re * b_im + a_im * b_re;
-
-            /* Convert from cartesian coordinates to a phase angle */
-            /* TODO: This needs to be made full-integer */
-            float phi = fast_atan2f((float)s_im, (float)s_re);
-
-            /* Scale by pi (since atan2 returns an angle in (-pi,pi]), convert back to Q.15 */
-            float phi_scaled = (phi/M_PI) * to_q15;
-            dthr->pcm_out_buf[dthr->nr_pcm_samples] = (int16_t)phi_scaled;
-
-            dthr->nr_pcm_samples++;
-
-            /* Store the last sample processed */
-            dthr->last_fm_re = a_re;
-            dthr->last_fm_im = a_im;
-        }
-
-        if (true == dthr->block_dc) {
-            TSL_BUG_IF_FAILED(dc_blocker_apply(&dthr->dc_blk, dthr->pcm_out_buf, dthr->nr_pcm_samples));
-        }
-
-        /* Apply the polyphase resampler, if we're asked */
-        if (NULL != dthr->pfir) {
-            /* Allocate a bounce buffer for the output */
-
-            /* Resample using the polyphase resampler */
-        }
+        TSL_BUG_IF_FAILED(multifm_fm_demod_process(dthr->demod, dthr->filt_samp_buf, dthr->nr_fm_samples,
+                    dthr->out_buf, &dthr->nr_pcm_samples, &nr_processed_bytes));
 
         /* x. Write out the resulting PCM samples */
-        if (0 > write(dthr->fifo_fd, dthr->pcm_out_buf, dthr->nr_pcm_samples * sizeof(int16_t))) {
+        if (0 > write(dthr->fifo_fd, dthr->out_buf, nr_processed_bytes)) {
             int errnum = errno;
             if (errnum == EPIPE) {
                 if (0 == dthr->nr_dropped_samples) {
@@ -193,7 +155,7 @@ aresult_t _demod_thread_work(struct worker_thread *wthr)
         }
     }
 
-    DIAG("Processed %zu samples before termination.", dthr->total_nr_fm_samples);
+    DIAG("Processed %zu samples before termination.", dthr->total_nr_demod_samples);
 
     return ret;
 }
@@ -219,9 +181,6 @@ aresult_t demod_thread_delete(struct demod_thread **pthr)
     }
 
     TSL_BUG_IF_FAILED(direct_fir_cleanup(&thr->fir));
-    if (NULL != thr->pfir) {
-        TSL_BUG_IF_FAILED(polyphase_fir_delete(&thr->pfir));
-    }
 
     TFREE(thr);
 
@@ -312,10 +271,7 @@ done:
 aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
         const double *lpf_taps, size_t lpf_nr_taps,
-        unsigned resample_decimate, unsigned resample_interpolate, const int16_t *resample_filter_taps,
-        size_t nr_resample_filter_taps,
         const char *fir_debug_output,
-        double dc_block_pole, bool enable_dc_block,
         double channel_gain)
 {
     aresult_t ret = A_OK;
@@ -327,12 +283,6 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
     TSL_ASSERT_ARG(0 != decimation_factor);
     TSL_ASSERT_ARG(NULL != lpf_taps);
     TSL_ASSERT_ARG(0 != lpf_nr_taps);
-    TSL_ASSERT_ARG(1.0 > dc_block_pole && 0.0 <= dc_block_pole);
-
-    if (0 != resample_decimate && 0 != resample_interpolate) {
-        TSL_ASSERT_ARG(NULL != resample_filter_taps);
-        TSL_ASSERT_ARG(0 != nr_resample_filter_taps);
-    }
 
     *pthr = NULL;
 
@@ -365,19 +315,8 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         goto done;
     }
 
-    /* Set up the DC blocker, if applicable */
-    thr->block_dc = enable_dc_block;
-
-    if (true == enable_dc_block) {
-        TSL_BUG_IF_FAILED(dc_blocker_init(&thr->dc_blk, dc_block_pole));
-    }
-
-    /* TODO If applicable, initialize the polyphase rational resampler */
-    if (0 != nr_resample_filter_taps) {
-        TSL_BUG_ON(NULL == resample_filter_taps);
-        TSL_BUG_IF_FAILED(polyphase_fir_new(&thr->pfir, nr_resample_filter_taps, resample_filter_taps,
-                    resample_interpolate, resample_decimate));
-    }
+    /* Set up the demodulator */
+    TSL_BUG_IF_FAILED(multifm_fm_demod_init(&thr->demod));
 
     /* Open the debug output file, if applicable */
     if (NULL != fir_debug_output && '\0' != *fir_debug_output) {
@@ -407,10 +346,6 @@ done:
             if (-1 != thr->fifo_fd) {
                 close(thr->fifo_fd);
                 thr->fifo_fd = -1;
-            }
-
-            if (NULL != thr->pfir) {
-                TSL_BUG_IF_FAILED(polyphase_fir_delete(&thr->pfir));
             }
 
             TSL_BUG_IF_FAILED(direct_fir_cleanup(&thr->fir));

@@ -1,4 +1,4 @@
-#include <multifm/demod.h>
+#include <multifm/fast_atan2f.h>
 
 #include <math.h>
 
