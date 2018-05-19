@@ -56,6 +56,9 @@ def options(opt):
 def configure(conf):
 	_loadTools(conf)
 
+	conf.check_cfg(package='tsl', uselib_store='TSL', define_name='HAVE_TSL',
+		msg='Checking for base TSL library', mandatory=True,
+		args=['--cflags', '--libs'])
 	conf.check(lib='rtlsdr', uselib='RTLSDR', define_name='HAVE_RTLSDR', msg='Checking for RTL-SDR library', mandatory=False)
 	conf.check(lib='ck', uselib='CK', define_name='HAVE_CONCURRENCYKIT', msg='Checking for ConcurrencyKit')
 	conf.check(lib='jansson', uselib='JANSSON', define_name='HAVE_JANSSON', msg='Checking for Jansson (JSON library)')
@@ -255,7 +258,7 @@ def build(bld):
 
 	bld.program(
 		source	= bld.path.ant_glob('multifm/*.c', excl=excl),
-		use		= ['app', 'config', 'tsl', 'filter', 'RTLSDR', 'DESPAIRSPY', 'UHD'],
+		use		= ['TSL', 'filter', 'RTLSDR', 'DESPAIRSPY', 'UHD'],
 		target	= os.path.join(binPath, 'multifm'),
 		name	= 'multifm',
 	)
@@ -263,7 +266,7 @@ def build(bld):
 	# Resampler
 	bld.program(
 		source	= bld.path.ant_glob('resampler/*.c'),
-		use		= ['app', 'config', 'tsl', 'filter'],
+		use		= ['TSL', 'filter'],
 		target	= os.path.join(binPath, 'resampler'),
 		name	= 'resampler',
 	)
@@ -271,53 +274,21 @@ def build(bld):
 	# decoder
 	bld.program(
 		source	= bld.path.ant_glob('decoder/*.c'),
-		use		= ['app', 'config', 'tsl', 'filter', 'pager', 'ais'],
+		use		= ['TSL', 'filter', 'pager', 'ais'],
 		target	= os.path.join(binPath, 'decoder'),
 		name	= 'decoder',
-	)
-
-	#app
-	appExcl = []
-	if cpuArch == 'armv7l' or cpuArch == 'aarch64':
-		# We want to ignore the CPU features check, since this relies on x86 CPUID
-		appExcl.append('app/cpufeatures.*')
-	bld.stlib(
-		source   = bld.path.ant_glob('app/*.c', excl=appExcl),
-		use      = ['config', 'tsl'],
-		target   = os.path.join(libPath, 'app'),
-		name     = 'app',
-	)
-	bld.program(
-		source   = bld.path.ant_glob('app/test/*.c'),
-		use      = ['app', 'test', 'tsl'],
-		target   = os.path.join(testPath, 'test_app'),
-		name     = 'test_app',
-	)
-
-	#config
-	bld.stlib(
-		source   = bld.path.ant_glob('config/*.c'),
-		use      = ['tsl'],
-		target   = os.path.join(libPath, 'config'),
-		name     = 'config',
-	)
-	bld.program(
-		source   = bld.path.ant_glob('config/test/*.c'),
-		use      = ['config', 'test', 'tsl'],
-		target   = os.path.join(testPath, 'test_config'),
-		name     = 'test_config',
 	)
 
 	# Filter Library
 	bld.stlib(
 		source   = bld.path.ant_glob('filter/*.c'),
-		use      = ['tsl'],
+		use      = ['TSL'],
 		target   = os.path.join(libPath, 'filter'),
 		name     = 'filter',
 	)
 	bld.program(
 		source   = bld.path.ant_glob('filter/test/*.c'),
-		use      = ['config', 'test', 'tsl', 'filter'],
+		use      = ['TSL', 'filter'],
 		target   = os.path.join(testPath, 'test_filter'),
 		name     = 'test_filter',
 	)
@@ -326,13 +297,13 @@ def build(bld):
 	# Pager
 	bld.stlib(
 		source   = bld.path.ant_glob('pager/*.c'),
-		use      = ['tsl', 'config'],
+		use      = ['TSL'],
 		target   = os.path.join(libPath, 'pager'),
 		name     = 'pager',
 	)
 	bld.program(
 		source   = bld.path.ant_glob('pager/test/*.c'),
-		use      = ['pager', 'config', 'test', 'tsl'],
+		use      = ['pager', 'TSL'],
 		target   = os.path.join(testPath, 'test_pager'),
 		name     = 'test_pager',
 	)
@@ -340,68 +311,15 @@ def build(bld):
 	# AIS
 	bld.stlib(
 		source   = bld.path.ant_glob('ais/*.c'),
-		use      = ['tsl'],
+		use      = ['TSL'],
 		target   = os.path.join(libPath, 'ais'),
 		name     = 'ais',
 	)
 	bld.program(
 		source   = bld.path.ant_glob('ais/test/*.c'),
-		use      = ['ais', 'config', 'test', 'tsl'],
+		use      = ['ais', 'TSL'],
 		target   = os.path.join(testPath, 'test_ais'),
 		name     = 'test_ais',
-	)
-
-	#test
-	bld.stlib(
-		source   = bld.path.ant_glob('test/*.c'),
-		use      = ['app'],
-		target   = os.path.join(libPath, 'test'),
-		name     = 'test',
-	)
-
-	#TSL
-	#Version objects are built specially first since they have a special define
-	versionDefine = '_VC_VERSION=\"%s\"' % bld.env.VERSION
-	bld.objects(
-		defines  = [versionDefine],
-		source   = 'tsl/version.c',
-		target   = 'tsl_version',
-		name     = 'tsl_version',
-	)
-	#Then the regular build happens
-
-	# Calculate what we might want to exclude for certain architectures
-	excl=['tsl/version.c', 'tsl/test/*.*']
-	if cpuArch == 'armv7l' or cpuArch == 'aarch64':
-		# We want to ignore coro - there's no ARM implementation yet
-		excl.append('tsl/coro/*.*')
-		excl.append('tsl/timer.c')
-
-	tslSource = bld.path.ant_glob('tsl/**/*.[cS]', excl=excl)
-	bld.stlib(
-		cflags   = ['-fPIC'],
-		source   = tslSource,
-		use      = ['tsl_version'],
-		target   = os.path.join(libPath, 'tsl'),
-		name     = 'tsl',
-	)
-
-	# Exclude the coroutine tests if we're building for ARM32
-	excl=[]
-	if cpuArch == 'armv7l' or cpuArch == 'aarch64':
-		excl.append('tsl/test/test_coro.c')
-		excl.append('tsl/test/test_speed.c')
-	bld.program(
-		source   = bld.path.ant_glob('tsl/test/*.c', excl=excl),
-		use      = ['tsl'],
-		target   = os.path.join(testPath, 'test_tsl'),
-		name     = 'tsl_test',
-	)
-	bld.program(
-		source   = bld.path.ant_glob('tsl/version_dump/*.c'),
-		use      = ['tsl'],
-		target   = os.path.join(binPath, 'dump_version'),
-		name     = 'dump_version',
 	)
 
 from waflib.Build import BuildContext
