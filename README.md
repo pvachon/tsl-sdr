@@ -1,7 +1,11 @@
-# The Standard Library
+# Software Defined Radio Tools
 
-This is the repository for the Software Defined Radio/DSP-focused version of
-The Standard Library, or TSL.
+This is the repository for tools that use the TSL that are meant for software
+defined radio and signal processing.
+
+## Getting the TSL
+
+Please have a look at [the TSL repository](https://github.com/pvachon/tsl)
 
 # Building
 
