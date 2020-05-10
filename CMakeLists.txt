@@ -21,7 +21,7 @@ set(TSL_SDR_BASE_DIR "${PROJECT_SOURCE_DIR}")
 add_definitions(-D_ATS_IN_TREE -D_GNU_SOURCE)
 add_definitions(-DSYS_CACHE_LINE_LENGTH=64)
 
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0")
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Osssssssssssssssssssssssssssssssssssssssssssssss")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
 # Grab the revision from git
@@ -84,11 +84,11 @@ add_subdirectory(decoder)
 # Only include RF interface modules we built as dpkg deps
 set(RF_INTERFACE_DEPS )
 if(RTLSDR_FOUND)
-    list(APPEND RF_INTERFACE_DEPS librtlsdr0)
+    set(RF_INTERFACE_DEPS "${RF_INTERFACE_DEPS}, librtlsdr0")
 endif()
 
 if(UHD_FOUND)
-    list(APPEND RF_INTERFACE_DEPS libuhd003)
+    set(RF_INTERFACE_DEPS "${RF_INTERFACE_DEPS}, libuhd003")
 endif()
 
 # Generate dpkg automatically
@@ -98,6 +98,6 @@ set(CPACK_PACKAGE_NAME "tsl-sdr")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGE_CONTACT "Phil Vachon <phil@security-embedded.com>")
 set(CPACK_DEBIAN_PACKAGE_DESCRIPTION "The Standard Library of SDR Functions")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libjansson4 libck1 ${RF_INTERFACE_DEPS}")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libjansson4, libck0${RF_INTERFACE_DEPS}")
 include(CPack)
 
