@@ -21,7 +21,7 @@ set(TSL_SDR_BASE_DIR "${PROJECT_SOURCE_DIR}")
 add_definitions(-D_ATS_IN_TREE -D_GNU_SOURCE)
 add_definitions(-DSYS_CACHE_LINE_LENGTH=64)
 
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Osssssssssssssssssssssssssssssssssssssssssssssss")
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
 # Grab the revision from git
@@ -41,13 +41,16 @@ add_definitions(-D_VC_VERSION="${GIT_REV}")
 execute_process(COMMAND uname -m
     OUTPUT_VARIABLE CPU_ARCH
     ERROR_QUIET)
+string(STRIP "${CPU_ARCH}" CPU_ARCH)
+
+message("CPU Archiecture is ${CPU_ARCH}")
 
 if("${CPU_ARCH}" STREQUAL "armv7l")
     add_definitions(-D_USE_ARM_NEON)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=cortex-a7 -mfpu=crypto-neon-fp-armv8 -mfloat-abi=hard")
 elseif("${CPU_ARCH}" STREQUAL "aarch64")
     add_definitions(-D_USE_ARM_NEON)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=cortex-a53")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native -mtune=native")
 else()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native -mtune=native")
 endif()
