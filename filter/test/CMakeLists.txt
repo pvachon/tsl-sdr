@@ -5,9 +5,9 @@ add_executable(test_filter
 target_link_libraries(test_filter
     filter
     tsltestframework
-    jansson
     tslconfig
     tslapp
-    tsl)
+    tsl
+    jansson)
 target_include_directories(test_filter PRIVATE "${TSL_SDR_BASE_DIR}")
 

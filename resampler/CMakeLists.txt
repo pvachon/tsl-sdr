@@ -11,10 +11,10 @@ install(TARGETS resampler
 target_link_libraries(resampler
     filter
     tsltestframework
-    jansson
     tslconfig
     tslapp
     tsl
     pthread
-    m)
+    m
+    jansson)
 

@@ -55,11 +55,11 @@ install(TARGETS multifm
 target_link_libraries(multifm
     filter
     tsltestframework
-    jansson
     tslconfig
     tslapp
     tsl
     pthread
     m
-    ${RF_INTERFACE_LIBS})
+    ${RF_INTERFACE_LIBS}
+    jansson)
 
