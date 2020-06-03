@@ -5,10 +5,10 @@ add_executable(test_pager
 target_link_libraries(test_pager
     pager
     tsltestframework
-    jansson
     tslconfig
     tslapp
-    tsl)
+    tsl
+    jansson)
 
 target_include_directories(test_pager PRIVATE "${TSL_SDR_BASE_DIR}")
 

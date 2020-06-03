@@ -13,11 +13,11 @@ target_link_libraries(decoder
     ais
     filter
     tsltestframework
-    jansson
     tslconfig
     tslapp
     tsl
     pthread
-    m)
+    m
+    jansson)
 
 
