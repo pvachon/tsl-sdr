@@ -54,7 +54,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if HAVE_RTLSDR
+#ifdef HAVE_RTLSDR
 static
 void _do_dump_rtl_sdr_devices(void)
 {
@@ -81,7 +81,7 @@ static
 void _usage(const char *name)
 {
     fprintf(stderr, "usage: %s [Config File 1]{, Config File 2, ...} | %s -h\n", name, name);
-#if HAVE_RTLSDR
+#ifdef HAVE_RTLSDR
     _do_dump_rtl_sdr_devices();
 #endif
 }

@@ -44,6 +44,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
+#include <inttypes.h>
 
 #define DEC_MSG(sev, sys, msg, ...) MESSAGE("DECODER", sev, sys, msg, ##__VA_ARGS__)
 
@@ -188,7 +189,7 @@ aresult_t _on_flex_alnum_msg(
     struct tm *gmt = gmtime(&now);
 
     fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"alphanumeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
-            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%lu,\"fragment\":%s,"
+            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%"PRIu64",\"fragment\":%s,"
             "\"maildrop\":%s,\"fragSeq\":%u,\"message\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             baud, 0, frame_no, cycle_no, phase_id[phase], cap_code,
@@ -220,7 +221,7 @@ aresult_t _on_flex_num_msg(
     struct tm *gmt = gmtime(&now);
 
     fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"numeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
-            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%lu,\"message\":\"",
+            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%"PRIu64",\"message\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             baud, 0, frame_no, cycle_no, phase_id[phase], cap_code);
 
@@ -252,7 +253,7 @@ aresult_t _on_flex_siv_msg(
     switch (siv_msg_type) {
     case PAGER_FLEX_SIV_TEMP_ADDRESS_ACTIVATION:
         fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"tempAddrActivation\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
-                "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%lu,\"startFrameNo\":%u,\"tempAddressId\":%u}\n",
+                "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%"PRIu64",\"startFrameNo\":%u,\"tempAddressId\":%u}\n",
                 gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
                 baud, 0, frame_no, cycle_no, phase_id[phase], cap_code, data & 0x7f, (data >> 7) & 0xf);
         break;

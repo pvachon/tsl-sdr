@@ -35,6 +35,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 static inline int8_t _pager_flex_slice_2fsk(struct pager_flex *flex, int16_t sample);
 static inline int8_t _pager_flex_slice_4fsk(struct pager_flex *flex, int16_t sample);
@@ -864,10 +865,10 @@ aresult_t _pager_flex_decode_tone(struct pager_flex *flex, uint8_t phase, uint64
         ret = flex->on_num_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id, capcode, flex->msg_buf, flex->msg_len);
         break;
     case PAGER_FLEX_SHORT_TYPE_8_SOURCES:
-        PAG_MSG(SEV_INFO, "TONE", "%02u/%03u/%c [%zu] Sourced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
+        PAG_MSG(SEV_INFO, "TONE", "%02u/%03u/%c [ %9"PRIu64"] Sourced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
         break;
     case PAGER_FLEX_SHORT_TYPE_SOURCES_AND_NUM:
-        PAG_MSG(SEV_INFO, "TONE", "%02u/%03u/%c [%zu] Sequenced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
+        PAG_MSG(SEV_INFO, "TONE", "%02u/%03u/%c [ %9"PRIu64"] Sequenced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
         break;
 
     case PAGER_FLEX_SHORT_TYPE_UNUSED:
@@ -911,13 +912,13 @@ aresult_t _pager_flex_decode_short_instruction_vec(struct pager_flex *flex, uint
     case PAGER_FLEX_SIV_TEMP_ADDRESS_ACTIVATION:
         break;
     case PAGER_FLEX_SIV_SYSTEM_EVENT:
-        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9zu] System Event (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9"PRIu64"] System Event (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
         break;
     case PAGER_FLEX_SIV_RESERVED_TEST:
-        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9zu] Reserved Test (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9"PRIu64"] Reserved Test (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode, siv_data);
         break;
     default:
-        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9zu] Unknown SIV %u (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode,
+        PAG_MSG(SEV_INFO, "SIV", "%02u/%03u/%c - [%9"PRIu64"] Unknown SIV %u (data = %08x)", flex->cycle_id, flex->frame_id, phase + 'A', capcode,
                 siv_type, siv_data);
     }
 
@@ -1019,7 +1020,7 @@ aresult_t _pager_flex_decode_vector(struct pager_flex *flex, uint8_t phase, uint
     case PAGER_FLEX_MESSAGE_SECURE:
     case PAGER_FLEX_MESSAGE_HEX:
     case PAGER_FLEX_MESSAGE_NUMBERED_NUMERIC:
-        PAG_MSG(SEV_INFO, "UNSUPP-MSG", "%02u/%03u/%c [%9zu] Unsupported Message: %s", flex->cycle_id, flex->frame_id, phase + 'A', capcode,  __pager_flex_type_code[vec_type]);
+        PAG_MSG(SEV_INFO, "UNSUPP-MSG", "%02u/%03u/%c [%9"PRIu64 "] Unsupported Message: %s", flex->cycle_id, flex->frame_id, phase + 'A', capcode,  __pager_flex_type_code[vec_type]);
         break;
     default:
         /* Shouldn't get here, but just in case... */
@@ -1184,7 +1185,7 @@ void _pager_flex_phase_process(struct pager_flex *flex, unsigned phase_id)
         /* Decode per what the vector word indicates */
         if (FAILED_UNLIKELY(_pager_flex_decode_vector(flex, phase_id, capcode, &phs->phase_words[vec_offs], nr_words + 1, phs->phase_words))) {
             /* TODO: increment an error counter */
-            PAG_MSG(SEV_WARNING, "BCH-ERROR", "%02u/%03u/%c [%zu] Uncorrectable Error",
+            PAG_MSG(SEV_WARNING, "BCH-ERROR", "%02u/%03u/%c [%9"PRIu64 "] Uncorrectable Error",
                     flex->cycle_id, flex->frame_id, phase_id + 'A', capcode);
         }
 
