@@ -43,15 +43,18 @@ execute_process(COMMAND uname -m
     ERROR_QUIET)
 string(STRIP "${CPU_ARCH}" CPU_ARCH)
 
-message("CPU Archiecture is ${CPU_ARCH}")
+message(STATUS "CPU Archiecture is ${CPU_ARCH}")
 
 if("${CPU_ARCH}" STREQUAL "armv7l")
+    message(STATUS "Enabling NEON, setting CPU Architecture to armv7-a")
     add_definitions(-D_USE_ARM_NEON)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=cortex-a7 -mfpu=crypto-neon-fp-armv8 -mfloat-abi=hard")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv7-a -mfpu=crypto-neon-fp-armv8 -mfloat-abi=hard")
 elseif("${CPU_ARCH}" STREQUAL "aarch64")
+    message(STATUS "Enabling NEON, setting CPU architecture to armv8-a")
     add_definitions(-D_USE_ARM_NEON)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native -mtune=native")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a -mtune=native")
 else()
+    message(STATUS "Using conservative defaults for CPU architecture")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native -mtune=native")
 endif()
 
