@@ -194,7 +194,7 @@ TEST_DECLARE_UNIT(test_one_shot, pocsag)
 {
     struct pager_pocsag *pocsag = NULL;
 
-    TEST_ASSERT_OK(pager_pocsag_new(&pocsag, 929612500ul, _test_pocsag_on_num_message_simple_cb, _test_pocsag_on_message_simple_cb));
+    TEST_ASSERT_OK(pager_pocsag_new(&pocsag, 929612500ul, _test_pocsag_on_num_message_simple_cb, _test_pocsag_on_message_simple_cb, false));
     TEST_ASSERT_OK(pager_pocsag_on_pcm(pocsag, samples, nr_samples));
     TEST_ASSERT_OK(pager_pocsag_delete(&pocsag));
 
@@ -205,7 +205,7 @@ TEST_DECLARE_UNIT(test_smoke, pocsag)
 {
     struct pager_pocsag *pocsag = NULL;
 
-    TEST_ASSERT_OK(pager_pocsag_new(&pocsag, 929612500ul, _test_pocsag_on_num_message_simple_cb, _test_pocsag_on_message_simple_cb));
+    TEST_ASSERT_OK(pager_pocsag_new(&pocsag, 929612500ul, _test_pocsag_on_num_message_simple_cb, _test_pocsag_on_message_simple_cb, false));
     TEST_ASSERT_NOT_NULL(pocsag);
     TEST_ASSERT_OK(pager_pocsag_delete(&pocsag));
     TEST_ASSERT_EQUALS(pocsag, NULL);

@@ -584,6 +584,7 @@ aresult_t process_samples(void)
 
     struct dc_blocker blck;
     struct sample_buf *read_buf = NULL;
+    size_t sample_count = 0;
 
     TSL_BUG_IF_FAILED(dc_blocker_init(&blck, dc_block_pole));
 
@@ -615,6 +616,7 @@ aresult_t process_samples(void)
             TSL_BUG_ON((1 & op_ret) != 0);
 
             read_buf->nr_samples += op_ret/sizeof(int16_t);
+            sample_count += op_ret/sizeof(int16_t);
 
             if (true == _invert) {
                 int16_t *samp = (int16_t *)read_buf->data_buf;
@@ -666,6 +668,7 @@ aresult_t process_samples(void)
     } while (app_running());
 
 done:
+    DEC_MSG(SEV_INFO, "TERMINATING", "Terminating processing loop, processed %zu samples", sample_count);
     return ret;
 }
 
@@ -687,7 +690,7 @@ int main(int argc, char * const argv[])
         TSL_BUG_IF_FAILED(pager_flex_new(&flex, center_freq, _on_flex_alnum_msg, _on_flex_num_msg, _on_flex_siv_msg));
     } else if (_decoder_type == DECODER_PAGER_TYPE_POCSAG) {
         DEC_MSG(SEV_INFO, "PROTOCOL", "Using the POCSAG Pager Protocol.");
-        TSL_BUG_IF_FAILED(pager_pocsag_new(&pocsag, center_freq, _on_pocsag_num_msg, _on_pocsag_alnum_msg));
+        TSL_BUG_IF_FAILED(pager_pocsag_new(&pocsag, center_freq, _on_pocsag_num_msg, _on_pocsag_alnum_msg, false));
     } else if (_decoder_type == DECODER_PROTO_TYPE_AIS) {
         DEC_MSG(SEV_INFO, "PROTOCOL", "Using the AIS Message Format.");
         TSL_BUG_IF_FAILED(ais_decode_new(&ais_decode, center_freq, _on_ais_position_report, _on_ais_base_station_report, _on_ais_static_voyage_data));

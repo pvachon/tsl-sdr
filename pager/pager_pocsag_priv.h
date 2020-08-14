@@ -231,6 +231,11 @@ struct pager_pocsag {
     uint16_t baud_rate;
 
     /**
+     * Whether or not we should skip the BCH code validation
+     */
+    bool skip_bch;
+
+    /**
      * Callback for handling the arrival of numeric messages
      */
     pager_pocsag_on_numeric_msg_func_t on_numeric;

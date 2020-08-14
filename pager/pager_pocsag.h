@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tsl/result.h>
+#include <stdbool.h>
 
 struct pager_pocsag;
 
@@ -27,11 +28,12 @@ typedef aresult_t (*pager_pocsag_on_alpha_msg_func_t)(
  * \param freq_hz The center frequency of this channel
  * \param on_numeric Function called when a numeric page has been successfully decoded.
  * \param on_alpha Function called when an alphanumeric page has been successfully decoded.
+ * \param skip_bch_decode Skip BCH checks (not recommended)
  *
  * \return A_OK on success, an error code otherwise.
  */
 aresult_t pager_pocsag_new(struct pager_pocsag **ppocsag, uint32_t freq_hz, pager_pocsag_on_numeric_msg_func_t on_numeric,
-        pager_pocsag_on_alpha_msg_func_t on_alpha);
+        pager_pocsag_on_alpha_msg_func_t on_alpha, bool skip_bch_decode);
 
 /**
  * Destroy a POCSAG decoder.

@@ -141,7 +141,8 @@ void _pager_pocsag_baud_search_reset(struct pager_pocsag *pocsag)
 
 aresult_t pager_pocsag_new(struct pager_pocsag **ppocsag, uint32_t freq_hz,
         pager_pocsag_on_numeric_msg_func_t on_numeric,
-        pager_pocsag_on_alpha_msg_func_t on_alpha)
+        pager_pocsag_on_alpha_msg_func_t on_alpha,
+        bool skip_bch_decode)
 {
     aresult_t ret = A_OK;
 
@@ -180,6 +181,8 @@ aresult_t pager_pocsag_new(struct pager_pocsag **ppocsag, uint32_t freq_hz,
 
     _pager_pocsag_baud_search_reset(pocsag);
     _pager_pocsag_message_decode_reset(&pocsag->decoder);
+
+    pocsag->skip_bch = skip_bch_decode;
 
     *ppocsag = pocsag;
 
@@ -337,6 +340,7 @@ aresult_t _pager_pocsag_process_batch(struct pager_pocsag *pocsag, struct pager_
                 decode->early_termination = true;
                 TSL_BUG_IF_FAILED(_pager_pocsag_message_decode_deliver(pocsag, decode));
             }
+            DIAG("Terminating processing batch; multibit errors detected.");
             ret = A_E_INVAL;
             goto done;
         }

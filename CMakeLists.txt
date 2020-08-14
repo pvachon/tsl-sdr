@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.7)
 
+include(CMakeDependentOption)
+
 project(TSL-SDR VERSION 1.0.0)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g3 -gdwarf-4 -rdynamic")
@@ -24,6 +26,13 @@ add_definitions(-DSYS_CACHE_LINE_LENGTH=64)
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
+# Enable POCSAG debugging
+option(DEBUG_POCSAG "Enable POCSAG State Machine Debugging" OFF)
+
+# Enable DIAG statements
+cmake_dependent_option(DEBUG_TSL "Enable verbose TSL debugging" ON
+                       "DEBUG_POCSAG" OFF)
+
 # Grab the revision from git
 execute_process(COMMAND git describe --abbrev=16 --dirty --always --tags
     OUTPUT_VARIABLE GIT_REV
@@ -36,6 +45,16 @@ else()
 endif()
 
 add_definitions(-D_VC_VERSION="${GIT_REV}")
+
+# Enable POCSAG debugging if requested
+if (DEBUG_POCSAG)
+    add_definitions(-D_PAGER_POCSAG_DEBUG)
+
+endif (DEBUG_POCSAG)
+
+if (DEBUG_TSL)
+    add_definitions(-D_TSL_DEBUG)
+endif (DEBUG_TSL)
 
 # Grab the CPU model we're building on (no cross-compiling support)
 execute_process(COMMAND uname -m
