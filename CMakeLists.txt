@@ -87,7 +87,7 @@ pkg_check_modules(TSL REQUIRED tsl)
 pkg_check_modules(RTLSDR librtlsdr)
 
 # Find DespAirspy
-pkg_check_modules(DESPAIRSPY despairspy)
+pkg_check_modules(DESPAIRSPY libdespairspy)
 
 # Find UHD
 pkg_check_modules(UHD uhd)
