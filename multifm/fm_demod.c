@@ -52,21 +52,23 @@ aresult_t multifm_fm_demod_process(struct demod_base *demod, int16_t *in_samples
     dfm = BL_CONTAINER_OF(demod, struct multifm_fm_demod, demod);
 
     // Calculate average power of samples
-    uint32_t sum_smp_rms = 0;
+    unsigned long sum_smp_pk = 0;
     for (size_t i = 0; i < nr_in_samples; i++) {
         // Calculate RMS of I & Q samples
         int32_t re_smp = in_samples[2 * i];
         int32_t im_smp = in_samples[2 * i + 1];
-        int32_t smp_rms = sqrt( ( pow(re_smp,2) + pow(im_smp,2) ) / 2.0 );
-        sum_smp_rms += smp_rms;
+        int32_t smp_pk = (re_smp * re_smp) + (im_smp * im_smp);
+        sum_smp_pk += smp_pk;
     }
-    float avg_smp_rms = (float)sum_smp_rms / (float)nr_in_samples;
+    // get average and rms
+    uint32_t avg_smp_pk = sum_smp_pk / nr_in_samples;
+    float avg_smp_rms = sqrt( (float)avg_smp_pk / 2.0);
     // Convert to dBm
     float avg_smp_vrms = ((float)avg_smp_rms + SMP_OFFSET) / SMP_SCALE;
-    float avg_smp_wrms = pow(avg_smp_vrms,2)/50;
-    float avg_smp_dBFS = 10*log10(avg_smp_wrms);
+    float avg_smp_wrms = pow(avg_smp_vrms,2)/50.0;
+    float avg_smp_dBFS = 10.0*log10(avg_smp_wrms);
     // Debug print
-    //MFM_MSG(SEV_INFO, "CSQ_DEBUG", "Average sample pwr: %.2f, %.2f dBFS, calc. from %d samples", avg_smp_rms, avg_smp_dBFS, (int)nr_in_samples);
+    //MFM_MSG(SEV_INFO, "CSQ_DEBUG", "Average sample pk: %d, rms: %.2f, %.2f dBFS, calc. from %d samples", avg_smp_pk, avg_smp_rms, avg_smp_dBFS, (int)nr_in_samples);
 
     // Demod the samples if we're above the threshold, silence if not
     for (size_t i = 0; i < nr_in_samples; i++) {
