@@ -9,7 +9,7 @@
  *  and dbFS is a pretty relative measurement to begin with.
  */
 #define SMP_SCALE   2300.0
-#define SMP_OFFSET  -4.1
+#define SMP_OFFSET  -3.6
 
 struct demod_base;
 
