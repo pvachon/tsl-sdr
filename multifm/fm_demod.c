@@ -66,7 +66,7 @@ aresult_t multifm_fm_demod_process(struct demod_base *demod, int16_t *in_samples
     float avg_smp_wrms = pow(avg_smp_vrms,2)/50;
     float avg_smp_dBFS = 10*log10(avg_smp_wrms);
     // Debug print
-    MFM_MSG(SEV_INFO, "CSQ_DEBUG", "Average sample pwr: %.2f, %.2f dBFS, calc. from %d samples", avg_smp_rms, avg_smp_dBFS, (int)nr_in_samples);
+    //MFM_MSG(SEV_INFO, "CSQ_DEBUG", "Average sample pwr: %.2f, %.2f dBFS, calc. from %d samples", avg_smp_rms, avg_smp_dBFS, (int)nr_in_samples);
 
     // Demod the samples if we're above the threshold, silence if not
     for (size_t i = 0; i < nr_in_samples; i++) {
