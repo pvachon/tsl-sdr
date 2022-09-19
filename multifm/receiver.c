@@ -130,19 +130,16 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
     rx->cleanup_func = cleanup_func;
     rx->thread_func = rx_func;
 
-    // Get sample buffer from config or default to 64
     if (FAILED(ret = config_get_integer(cfg, &nr_samp_bufs, "nrSampBufs"))) {
         MFM_MSG(SEV_INFO, "DEFAULT-SAMP-BUFS", "Setting sample buffer count to 64");
         nr_samp_bufs = 64;
     }
 
-    // Get sample rate
     if (FAILED(ret = config_get_integer(cfg, &sample_rate, "sampleRateHz"))) {
         MFM_MSG(SEV_INFO, "NO-SAMPLE-RATE", "Need to specify a sample rate, in Hertz.");
         goto done;
     }
 
-    // Get center freq
     if (FAILED(ret = config_get_integer(cfg, &center_freq, "centerFreqHz"))) {
         MFM_MSG(SEV_INFO, "NO-CENTER-FREQ", "You forgot to specify a center frequency, in Hz.");
         goto done;
@@ -203,39 +200,21 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
         double channel_gain = 1.0,
                channel_gain_db = 0.0;
 
-        // Var for optional CSQ mode
-        int csq_level_dbfs = 0;
-
-        // FIFO location
         if (FAILED(ret = config_get_string(&channel, &fifo_name, "outFifo"))) {
             MFM_MSG(SEV_ERROR, "MISSING-FIFO-ID", "Missing output FIFO filename, aborting.");
             goto done;
         }
 
-        // Channel frequency
         if (FAILED(ret = config_get_integer(&channel, &nb_center_freq, "chanCenterFreq"))) {
             MFM_MSG(SEV_ERROR, "MISSING-CENTER-FREQ", "Missing output channel center frequency.");
             goto done;
         }
 
-        // Optional CSQ parameter
-        if (FAILED(ret = config_get_integer(&channel, &csq_level_dbfs, "csqLeveldBFS"))) {
-            MFM_MSG(SEV_INFO, "MISSING-SQUELCH", "No squelch specified, channel will be open squelch.");
-        } else {
-            if (csq_level_dbfs == 0) {
-                MFM_MSG(SEV_INFO, "NO-SQUELCH", "Squelch of 0 specified, channel will be open squelch.");
-            } else {
-                MFM_MSG(SEV_INFO, "CARRIER-SQUELCH", "Channel carrier squelch set to %d", csq_level_dbfs);
-            }
-        }
-
-        // Optional debug
         if (!FAILED(ret = config_get_string(&channel, &signal_debug, "signalDebugFile"))) {
             MFM_MSG(SEV_INFO, "WRITING-SIGNAL-DEBUG", "The channel at frequency %d will have raw I/Q written to '%s'",
                     nb_center_freq, signal_debug);
         }
 
-        // Optional channel gain
         if (!FAILED(ret = config_get_float(&channel, &channel_gain_db, "dBGain"))) {
             /* Convert the gain to linear units */
             channel_gain = pow(10.0, channel_gain_db/10.0);
@@ -248,8 +227,7 @@ aresult_t receiver_init(struct receiver *rx, struct config *cfg,
         if (FAILED(ret = demod_thread_new(&dmt, -1, (int32_t)nb_center_freq - center_freq,
                         sample_rate, fifo_name, decimation_factor, lpf_taps, lpf_nr_taps,
                         signal_debug,
-                        channel_gain,
-                        csq_level_dbfs)))
+                        channel_gain)))
         {
             MFM_MSG(SEV_ERROR, "FAILED-DEMOD-THREAD", "Failed to create demodulator thread, aborting.");
             goto done;

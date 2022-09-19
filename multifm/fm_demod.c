@@ -1,7 +1,6 @@
 #include <multifm/fm_demod.h>
 #include <multifm/demod_base.h>
 #include <multifm/fast_atan2f.h>
-#include <multifm/multifm.h>
 
 #include <filter/filter.h>
 
@@ -35,7 +34,7 @@ aresult_t multifm_fm_demod_init(struct demod_base **pdemod)
 }
 
 aresult_t multifm_fm_demod_process(struct demod_base *demod, int16_t *in_samples, size_t nr_in_samples,
-        int16_t *out_samples, size_t *pnr_out_samples, size_t *pnr_out_bytes, int csq_level_dbfs)
+        int16_t *out_samples, size_t *pnr_out_samples, size_t *pnr_out_bytes)
 {
     aresult_t ret = A_OK;
 
@@ -51,57 +50,29 @@ aresult_t multifm_fm_demod_process(struct demod_base *demod, int16_t *in_samples
 
     dfm = BL_CONTAINER_OF(demod, struct multifm_fm_demod, demod);
 
-    // Calculate average power of samples
-    unsigned long sum_smp_pk = 0;
     for (size_t i = 0; i < nr_in_samples; i++) {
-        // Calculate RMS of I & Q samples
-        int32_t re_smp = in_samples[2 * i];
-        int32_t im_smp = in_samples[2 * i + 1];
-        int32_t smp_pk = (re_smp * re_smp) + (im_smp * im_smp);
-        sum_smp_pk += smp_pk;
-    }
-    // get average and rms
-    uint32_t avg_smp_pk = sum_smp_pk / nr_in_samples;
-    float avg_smp_rms = sqrt( (float)avg_smp_pk / 2.0);
-    // Convert to dBm
-    float avg_smp_vrms = ((float)avg_smp_rms + SMP_OFFSET) / SMP_SCALE;
-    float avg_smp_wrms = pow(avg_smp_vrms,2)/50.0;
-    float avg_smp_dBFS = 10.0*log10(avg_smp_wrms);
-    // Debug print
-    //MFM_MSG(SEV_INFO, "CSQ_DEBUG", "Average sample pk: %d, rms: %.2f, %.2f dBFS, calc. from %d samples", avg_smp_pk, avg_smp_rms, avg_smp_dBFS, (int)nr_in_samples);
-
-    // Demod the samples if we're above the threshold, silence if not
-    for (size_t i = 0; i < nr_in_samples; i++) {
-        // Get next samples
-        int32_t a_re =  in_samples[2 * i    ],
+        /* Get the complex conjugate of the prior sample, negating the phase term */
+        int32_t b_re =  dfm->last_fm_re,
+                b_im = -dfm->last_fm_im,
+                a_re =  in_samples[2 * i    ],
                 a_im =  in_samples[2 * i + 1];
-        // Check squelch and demod if above threshold or if we're in open squelch
-        if ((avg_smp_dBFS >= csq_level_dbfs) || csq_level_dbfs == 0) {
-            /* Get the complex conjugate of the prior sample, negating the phase term */
-            int32_t b_re =  dfm->last_fm_re,
-                    b_im = -dfm->last_fm_im;
-            int32_t s_re = 0,
-                    s_im = 0;
+        int32_t s_re = 0,
+                s_im = 0;
 
-            /* Calculate the phase difference */
-            s_re = a_re * b_re - a_im * b_im;
-            s_im = a_re * b_im + a_im * b_re;
+        /* Calculate the phase difference */
+        s_re = a_re * b_re - a_im * b_im;
+        s_im = a_re * b_im + a_im * b_re;
 
-            /* Convert from cartesian coordinates to a phase angle */
-            /* TODO: This needs to be made full-integer */
-            float phi = fast_atan2f((float)s_im, (float)s_re);
+        /* Convert from cartesian coordinates to a phase angle */
+        /* TODO: This needs to be made full-integer */
+        float phi = fast_atan2f((float)s_im, (float)s_re);
 
-            /* Scale by pi (since atan2 returns an angle in (-pi,pi]), convert back to Q.15 */
-            float phi_scaled = (phi/M_PI) * to_q15;
-            out_samples[nr_out_samples] = (int16_t)phi_scaled;
-        }
-        // Output silence if below threshold
-        else {
-            out_samples[nr_out_samples] = (int16_t)0;
-            
-        }
-        // Do this regardless
+        /* Scale by pi (since atan2 returns an angle in (-pi,pi]), convert back to Q.15 */
+        float phi_scaled = (phi/M_PI) * to_q15;
+        out_samples[nr_out_samples] = (int16_t)phi_scaled;
+
         nr_out_samples++;
+
         /* Store the last sample processed */
         dfm->last_fm_re = a_re;
         dfm->last_fm_im = a_im;

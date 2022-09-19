@@ -99,11 +99,6 @@ struct demod_thread {
      * Output demodulated sample buffer
      */
     int16_t out_buf[LPF_OUTPUT_LEN];
-
-    /**
-     * CSQ level in dBFS (0 = open squelch)
-     */
-    int8_t csq_level_dbfs;
 };
 
 aresult_t demod_thread_delete(struct demod_thread **pthr);
@@ -118,6 +113,5 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
         const double *lpf_taps, size_t lpf_nr_taps,
         const char *fir_debug_output,
-        double channel_gain,
-        int csq_level_dbfs);
+        double channel_gain);
 

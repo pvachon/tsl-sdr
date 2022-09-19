@@ -87,7 +87,7 @@ aresult_t demod_thread_process(struct demod_thread *dthr, struct sample_buf *sbu
         dthr->nr_pcm_samples = 0;
 
         TSL_BUG_IF_FAILED(multifm_fm_demod_process(dthr->demod, dthr->filt_samp_buf, dthr->nr_fm_samples,
-                    dthr->out_buf, &dthr->nr_pcm_samples, &nr_processed_bytes, dthr->csq_level_dbfs));
+                    dthr->out_buf, &dthr->nr_pcm_samples, &nr_processed_bytes));
 
         /* x. Write out the resulting PCM samples */
         if (0 > write(dthr->fifo_fd, dthr->out_buf, nr_processed_bytes)) {
@@ -208,10 +208,10 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, const double *lpf_taps, s
 
     int16_t *coeffs = NULL;
     double f_offs = -2.0 * M_PI * (double)offset_hz / (double)sample_rate;
-    #ifdef _DUMP_LPF
-        int64_t power = 0;
-        double dpower = 0.0;
-    #endif /* defined(_DUMP_LPF) */
+#ifdef _DUMP_LPF
+    int64_t power = 0;
+    double dpower = 0.0;
+#endif /* defined(_DUMP_LPF) */
     size_t base = lpf_nr_taps;
 
     DIAG("Preparing LPF for offset %d Hz", offset_hz);
@@ -225,45 +225,45 @@ aresult_t _demod_fir_prepare(struct demod_thread *thr, const double *lpf_taps, s
         goto done;
     }
 
-    #ifdef _DUMP_LPF
-        fprintf(stderr, "lpf_shifted_%d = [\n", offset_hz);
-    #endif /* defined(_DUMP_LPF) */
+#ifdef _DUMP_LPF
+    fprintf(stderr, "lpf_shifted_%d = [\n", offset_hz);
+#endif /* defined(_DUMP_LPF) */
 
     for (size_t i = 0; i < lpf_nr_taps; i++) {
         /* Calculate the new tap coefficient */
         const double complex lpf_tap = gain * cexp(CMPLX(0, f_offs * (double)i)) * lpf_taps[i];
         const double q15 = 1ll << Q_15_SHIFT;
-        #ifdef _DUMP_LPF
-            double ptemp = 0;
-            int64_t samp_power = 0;
-        #endif
+#ifdef _DUMP_LPF
+        double ptemp = 0;
+        int64_t samp_power = 0;
+#endif
 
         /* Calculate the Q31 coefficient */
         coeffs[       i] = (int16_t)(creal(lpf_tap) * q15);
         coeffs[base + i] = (int16_t)(cimag(lpf_tap) * q15);
 
-        #ifdef _DUMP_LPF
-            ptemp = sqrt( (creal(lpf_tap) * creal(lpf_tap)) + (cimag(lpf_tap) * cimag(lpf_tap)) );
-            samp_power = sqrt( ((int64_t)coeffs[i] * (int64_t)coeffs[i]) + ((int64_t)coeffs[base + i] * (int64_t)coeffs[base + i]) );
+#ifdef _DUMP_LPF
+        ptemp = sqrt( (creal(lpf_tap) * creal(lpf_tap)) + (cimag(lpf_tap) * cimag(lpf_tap)) );
+        samp_power = sqrt( ((int64_t)coeffs[i] * (int64_t)coeffs[i]) + ((int64_t)coeffs[base + i] * (int64_t)coeffs[base + i]) );
 
-            power += samp_power;
-            dpower += ptemp;
+        power += samp_power;
+        dpower += ptemp;
 
-            fprintf(stderr, "    complex(%f, %f), %% (%d, %d)\n", creal(lpf_tap), cimag(lpf_tap), coeffs[i], coeffs[base + i]);
-        #endif /* defined(_DUMP_LPF) */
+        fprintf(stderr, "    complex(%f, %f), %% (%d, %d)\n", creal(lpf_tap), cimag(lpf_tap), coeffs[i], coeffs[base + i]);
+#endif /* defined(_DUMP_LPF) */
     }
-    #ifdef _DUMP_LPF
-        fprintf(stderr, "];\n");
-        fprintf(stderr, "%% Total power: %llu (%016llx) (%f)\n", power, power, dpower);
-    #endif /* defined(_DUMP_LPF) */
+#ifdef _DUMP_LPF
+    fprintf(stderr, "];\n");
+    fprintf(stderr, "%% Total power: %llu (%016llx) (%f)\n", power, power, dpower);
+#endif /* defined(_DUMP_LPF) */
 
     /* Create a Direct Type FIR implementation */
     TSL_BUG_IF_FAILED(direct_fir_init(&thr->fir, lpf_nr_taps, coeffs, &coeffs[base], decimation, true, sample_rate, offset_hz));
 
-    done:
-        if (NULL != coeffs) {
-            TFREE(coeffs);
-        }
+done:
+    if (NULL != coeffs) {
+        TFREE(coeffs);
+    }
 
     return ret;
 }
@@ -272,8 +272,7 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
         int32_t offset_hz, uint32_t samp_hz, const char *out_fifo, int decimation_factor,
         const double *lpf_taps, size_t lpf_nr_taps,
         const char *fir_debug_output,
-        double channel_gain,
-        int csq_level_dbfs)
+        double channel_gain)
 {
     aresult_t ret = A_OK;
 
@@ -293,9 +292,6 @@ aresult_t demod_thread_new(struct demod_thread **pthr, unsigned core_id,
 
     thr->fifo_fd = -1;
     thr->debug_signal_fd = -1;
-
-    // Pass in the CSQ variable
-    thr->csq_level_dbfs = csq_level_dbfs;
 
     /* Initialize the work queue */
     if (FAILED(ret = work_queue_new(&thr->wq, 128))) {
