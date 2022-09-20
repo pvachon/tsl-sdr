@@ -104,6 +104,7 @@ add_subdirectory(multifm)
 add_subdirectory(pager)
 add_subdirectory(ais)
 add_subdirectory(resampler)
+add_subdirectory(squelch)
 add_subdirectory(decoder)
 
 # Only include RF interface modules we built as dpkg deps
