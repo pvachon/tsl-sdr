@@ -302,6 +302,117 @@ char *__rtl_sdr_tuner_names[] = {
     [RTLSDR_TUNER_R828D] = "Rafael Micro R828D",
 };
 
+
+/** 
+ * An RTL-SDR device can be identified by either the serial number read from
+ * the RTL-SDR eeprom or by the less predictable device index. The search
+ * procedure is now:
+ * 
+ *  1. If deviceSerial is present, use the lowest RTL-SDR index with matching serial or fail.
+ *      To remain largely consistent with librtlsdr's verbose_device_search serial matching, the
+ *      serial matching is as follows:
+ *      1a. Accept first device serial that matches user provided serial.
+ *      1b. Accept first device serial that matches user provided serial as a prefix.
+ *      1c. Accept first device serial that matches user provided serial as a suffix.
+ *      1d. To maintain consistent behavior with deviceIndex search, fail.
+ *  2. If deviceIndex is present, attempt to use the indicated RTL-SDR or fail.
+ *      2a. To maintain compatible behavior, if deviceIndex is present and can't be opened, fail.
+ *  3. As a last resort, use the first RTL-SDR that can be opened or fail.
+ *
+ * * Notes on RTLSDR EEPROM and serial numbers:
+ *
+ * There is no guarantee that device serial numbers are unique.
+ *
+ * The maximum length of a serial number is not defined. The limit in the EEPROM is
+ * 32 UTF-16 bytes shared between three string descriptors, manufacturer, product and
+ * serial. The code in librtlsdr has no support for unicode and uses the ASCII variants
+ * of the libusb string descriptor functions.
+ *
+ * The purpose of the prefix and suffix serial matching is for people who have sets of
+ * devices prepared for specific uses where any device in that set is equivalent within
+ * that set. The device serial numbers are a concatenation of a common set name and a
+ * unique device identifier. E.g. `VHFAIR0`, `VHFAIR1`, `UHFAIR0`, `UHFAIR1`. By
+ * configuring software to use a device with serial `VHF` either `VHFAIR0` or `VHFAIR1`
+ * could be selected if available.
+ */
+
+static
+aresult_t __rtl_sdr_device_search(const int user_idx, const char *user_serial, int *out_idx, rtlsdr_dev_t **out_rtldev)
+{
+    aresult_t ret = A_OK;
+
+    int device_count = -1;
+    int device_iter = 0;
+    char device_serial[256];
+
+    TSL_ASSERT_ARG(NULL != out_rtldev);
+
+    device_count = rtlsdr_get_device_count();
+
+    if (device_count < 1) {
+        ret = A_E_NOTFOUND;
+        goto done;
+    }
+
+    if (NULL != user_serial) {
+
+        /* Search for an exact match */
+        for (device_iter = 0; device_iter < device_count; device_iter++) {
+            if (rtlsdr_get_device_usb_strings(device_iter, NULL, NULL, device_serial) < 0) continue;
+
+            if (!strncmp(device_serial, user_serial, 256) && !rtlsdr_open(out_rtldev, device_iter))
+                goto found;
+        }
+
+        /* Search for user_serial as a prefix */
+
+        for (device_iter = 0; device_iter < device_count; device_iter++) {
+            if (rtlsdr_get_device_usb_strings(device_iter, NULL, NULL, device_serial) < 0) continue;
+
+            if (!strncmp(device_serial, user_serial, strlen(user_serial)) && !rtlsdr_open(out_rtldev, device_iter))
+                goto found;
+        }
+
+        /* Search for user_serial as suffix */
+
+        for (device_iter = 0; device_iter < device_count; device_iter++) {
+            int offset = 0;
+
+            if (rtlsdr_get_device_usb_strings(device_iter, NULL, NULL, device_serial) < 0) continue;
+            offset = strnlen(device_serial, 255) - strlen(user_serial);
+
+            if ( !(offset < 0) && !strncmp(device_serial+offset, user_serial, strlen(user_serial))
+                    && !rtlsdr_open(out_rtldev, device_iter))
+                goto found;
+        }
+        ret = A_E_NOTFOUND;
+        goto done;
+    }
+
+    /* Attempt to open by index */
+    if ( !(user_idx < 0) ) {
+        device_iter = user_idx;
+        if (!rtlsdr_open(out_rtldev, device_iter))
+            goto found;
+
+        ret = A_E_NOTFOUND;
+        goto done;
+    }
+
+    /* Open first available device. */
+    for (device_iter = 0; device_iter < device_count; device_iter++) {
+        if (!rtlsdr_open(out_rtldev, device_iter)) 
+            goto found;
+    }
+    ret = A_E_NOTFOUND;
+
+found:
+    *out_idx = device_iter;
+
+done:
+    return ret;
+}
+
 /**
  * Create and start a new worker thread for the RTL-SDR.
  */
@@ -315,7 +426,10 @@ aresult_t rtl_sdr_worker_thread_new(
     struct rtlsdr_dev *dev = NULL;
     struct config device = CONFIG_INIT_EMPTY;
     const char *rtl_dump_file = NULL;
-    int dev_idx = -1,
+    const char *dev_user_serial = NULL;
+    char dev_serial[256] = { 0 };
+    int dev_user_idx = -1,
+        dev_idx = -1,
         rret = 0,
         ppm_corr = 0,
         rtl_ret = 0,
@@ -345,22 +459,34 @@ aresult_t rtl_sdr_worker_thread_new(
         goto done;
     }
 
-    /* Figure out which RTL-SDR device we want. */
-    if (FAILED(ret = config_get_integer(&device, &dev_idx, "deviceIndex"))) {
-        MFM_MSG(SEV_ERROR, "NO-DEV-SPEC", "Need to specify a 'deviceIndex' entry in configuration");
+    rret = config_get_integer(&device, &dev_user_idx, "deviceIndex");
+    if (FAILED(rret)) {
+        if (rret != A_E_NOTFOUND) {
+            MFM_MSG(SEV_ERROR, "DEV-DEVIDX-INVAL", "Value for 'deviceIndex' is invalid.");
+            goto done;
+        }
+    }
+
+    rret = config_get_string(&device, &dev_user_serial, "deviceSerial");
+    if (FAILED(rret)) {
+        if (rret != A_E_NOTFOUND) {
+            MFM_MSG(SEV_ERROR, "DEV-DEVSER-INVAL", "Value for 'deviceSerial' is invalid.");
+            goto done;
+        }
+    }
+
+    if (FAILED(ret = __rtl_sdr_device_search(dev_idx, dev_user_serial, &dev_idx, &dev))) {
+        MFM_MSG(SEV_ERROR, "DEV-NOT-FOUND", "Unable to open device.");
         goto done;
     }
 
-    if (0 != (rret = rtlsdr_open(&dev, dev_idx))) {
-        MFM_MSG(SEV_ERROR, "BAD-DEV-SPEC", "Could not open device index %d.", dev_idx);
-        ret = A_E_INVAL;
-        goto done;
-    }
     TSL_BUG_ON(NULL == dev);
 
     tuner_type = rtlsdr_get_tuner_type(dev);
 
-    MFM_MSG(SEV_INFO, "DEV-IDX-OPEN", "Successfully opened device at index %d", dev_idx);
+    rtlsdr_get_usb_strings(dev, NULL, NULL, dev_serial);
+
+    MFM_MSG(SEV_INFO, "DEV-IDX-OPEN", "Successfully opened device %d with serial '%s'.", dev_idx, dev_serial);
     MFM_MSG(SEV_INFO, "DEV-IDX-OPEN", "Device: %s Tuner: %s", rtlsdr_get_device_name(dev_idx), __rtl_sdr_tuner_names[(unsigned)tuner_type]);
 
     if (RTLSDR_TUNER_E4000 != tuner_type && RTLSDR_TUNER_R820T != tuner_type) {
