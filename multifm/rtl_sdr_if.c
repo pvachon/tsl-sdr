@@ -463,6 +463,7 @@ aresult_t rtl_sdr_worker_thread_new(
     if (FAILED(rret)) {
         if (rret != A_E_NOTFOUND) {
             MFM_MSG(SEV_ERROR, "DEV-DEVIDX-INVAL", "Value for 'deviceIndex' is invalid.");
+            ret = rret;
             goto done;
         }
     }
@@ -471,6 +472,7 @@ aresult_t rtl_sdr_worker_thread_new(
     if (FAILED(rret)) {
         if (rret != A_E_NOTFOUND) {
             MFM_MSG(SEV_ERROR, "DEV-DEVSER-INVAL", "Value for 'deviceSerial' is invalid.");
+            ret = rret;
             goto done;
         }
     }
