@@ -350,6 +350,7 @@ aresult_t __rtl_sdr_device_search(const int user_idx, const char *user_serial, i
     device_count = rtlsdr_get_device_count();
 
     if (device_count < 1) {
+	MFM_MSG(SEV_ERROR, "DEV-NOT-FOUND", "No RTLSDR devices found.");
         ret = A_E_NOTFOUND;
         goto done;
     }
@@ -480,7 +481,7 @@ aresult_t rtl_sdr_worker_thread_new(
         }
     }
 
-    if (FAILED(ret = __rtl_sdr_device_search(dev_idx, dev_user_serial, &dev_idx, &dev))) {
+    if (FAILED(ret = __rtl_sdr_device_search(dev_user_idx, dev_user_serial, &dev_idx, &dev))) {
         MFM_MSG(SEV_ERROR, "DEV-NOT-FOUND", "Unable to open device.");
         goto done;
     }
