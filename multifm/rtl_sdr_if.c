@@ -385,7 +385,9 @@ aresult_t __rtl_sdr_device_search(const int user_idx, const char *user_serial, i
                     && !rtlsdr_open(out_rtldev, device_iter))
                 goto found;
         }
-        ret = A_E_NOTFOUND;
+
+        MFM_MSG(SEV_ERROR, "DEV-NOT-FOUND", "Unable to open any RTLSDR matching or containing configured deviceSerial '%s'.", user_serial);
+	ret = A_E_NOTFOUND;
         goto done;
     }
 
@@ -395,6 +397,7 @@ aresult_t __rtl_sdr_device_search(const int user_idx, const char *user_serial, i
         if (!rtlsdr_open(out_rtldev, device_iter))
             goto found;
 
+	MFM_MSG(SEV_ERROR, "DEV-NOT-FOUND", "Unable to open RTLSDR with configued deviceIndex '%d'.", user_idx);
         ret = A_E_NOTFOUND;
         goto done;
     }
@@ -404,8 +407,8 @@ aresult_t __rtl_sdr_device_search(const int user_idx, const char *user_serial, i
         if (!rtlsdr_open(out_rtldev, device_iter)) 
             goto found;
     }
-    ret = A_E_NOTFOUND;
 
+    ret = A_E_NOTFOUND;
 found:
     *out_idx = device_iter;
 
