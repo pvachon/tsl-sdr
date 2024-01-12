@@ -284,5 +284,10 @@ struct pager_pocsag {
      * Current state of the wire protocol handling
      */
     enum pager_pocsag_state cur_state;
+
+    /**
+     * Frequency, in Hertz, of the center of this pager channel
+     */
+    uint32_t freq_hz;
 };
 

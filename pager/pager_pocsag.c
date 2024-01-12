@@ -183,6 +183,7 @@ aresult_t pager_pocsag_new(struct pager_pocsag **ppocsag, uint32_t freq_hz,
     _pager_pocsag_message_decode_reset(&pocsag->decoder);
 
     pocsag->skip_bch = skip_bch_decode;
+    pocsag->freq_hz = freq_hz;
 
     *ppocsag = pocsag;
 
@@ -278,7 +279,7 @@ aresult_t _pager_pocsag_message_decode_deliver(struct pager_pocsag *pocsag, stru
 #endif /* defined(_PAGER_POCSAG_DEBUG) */
             decode->message_alpha[decode->next_byte_alpha] = '\0';
             TSL_BUG_IF_FAILED(pocsag->on_alpha(pocsag, pocsag->baud_rate, decode->cap_code,
-                        decode->message_alpha, decode->next_byte_alpha, decode->function));
+                        decode->message_alpha, decode->next_byte_alpha, decode->function, pocsag->freq_hz));
         } else {
 #ifdef _PAGER_POCSAG_DEBUG
             decode->message_alpha[decode->next_byte_alpha] = '\0';
@@ -287,7 +288,7 @@ aresult_t _pager_pocsag_message_decode_deliver(struct pager_pocsag *pocsag, stru
 #endif /* defined(_PAGER_POCSAG_DEBUG) */
             decode->message_numeric[decode->next_byte_numeric] = '\0';
             TSL_BUG_IF_FAILED(pocsag->on_numeric(pocsag, pocsag->baud_rate, decode->cap_code,
-                        decode->message_numeric, decode->next_byte_numeric, decode->function));
+                        decode->message_numeric, decode->next_byte_numeric, decode->function, pocsag->freq_hz));
         }
     }
     _pager_pocsag_message_decode_reset(decode);
