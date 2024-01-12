@@ -24,7 +24,8 @@ typedef aresult_t (*pager_flex_on_alnum_msg_func_t)(
         bool maildrop,
         uint8_t seq_num,
         const char *message_bytes,
-        size_t message_len);
+        size_t message_len,
+	uint32_t freq_hz);
 
 /**
  * Callback type. This is registered with each pager_flex, and is called whenever there is a long numeric page to process.
@@ -40,7 +41,8 @@ typedef aresult_t (*pager_flex_on_num_msg_func_t)(
         uint8_t frame_no,
         uint64_t cap_code,
         const char *message_bytes,
-        size_t message_len);
+        size_t message_len,
+	uint32_t freq_hz);
 
 /**
  * Special Instruction Vector (SIV) types
@@ -80,7 +82,8 @@ typedef aresult_t (*pager_flex_on_siv_msg_func_t)(
         uint8_t frame_no,
         uint64_t cap_code,
         uint8_t siv_msg_type,
-        uint32_t data);
+        uint32_t data,
+	uint32_t freq_hz);
 
 /**
  * Create a new FLEX pager handler.

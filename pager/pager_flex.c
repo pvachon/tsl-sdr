@@ -674,7 +674,7 @@ aresult_t _pager_flex_decode_alphanumeric(struct pager_flex *flex, uint8_t phase
     }
 
     ret = flex->on_alnum_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id, capcode,
-            fragment, maildrop, seq_num, flex->msg_buf, flex->msg_len);
+            fragment, maildrop, seq_num, flex->msg_buf, flex->msg_len, flex->freq_hz);
 
 done:
     return ret;
@@ -817,7 +817,7 @@ aresult_t _pager_flex_decode_numeric(struct pager_flex *flex, uint8_t phase, uin
     } while (0 != nr_bits);
 
     ret = flex->on_num_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id,
-            capcode, flex->msg_buf, flex->msg_len);
+            capcode, flex->msg_buf, flex->msg_len, flex->freq_hz);
 
 done:
     return ret;
@@ -862,7 +862,7 @@ aresult_t _pager_flex_decode_tone(struct pager_flex *flex, uint8_t phase, uint64
         }
 
         /* Deliver the message as a normal alphanumeric message */
-        ret = flex->on_num_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id, capcode, flex->msg_buf, flex->msg_len);
+        ret = flex->on_num_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id, capcode, flex->msg_buf, flex->msg_len, flex->freq_hz);
         break;
     case PAGER_FLEX_SHORT_TYPE_8_SOURCES:
         PAG_MSG(SEV_INFO, "TONE", "%02u/%03u/%c [ %9"PRIu64"] Sourced Tone: [%08x, %08x]", flex->cycle_id, flex->frame_id, phase + 'A', capcode, first_word, second_word);
@@ -924,7 +924,7 @@ aresult_t _pager_flex_decode_short_instruction_vec(struct pager_flex *flex, uint
 
     if (NULL != flex->on_siv_msg) {
         flex->on_siv_msg(flex, coding->baud, phase, flex->cycle_id, flex->frame_id, capcode,
-                siv_type, siv_data);
+                siv_type, siv_data, flex->freq_hz);
     }
 
 

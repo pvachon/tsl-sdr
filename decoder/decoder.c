@@ -182,7 +182,8 @@ aresult_t _on_flex_alnum_msg(
         bool maildrop,
         uint8_t seq_num,
         const char *message_bytes,
-        size_t message_len)
+        size_t message_len,
+	uint32_t freq_hz)
 {
     /* TODO: this sucks, should move it closer to the capture clock */
     time_t now = time(NULL);
@@ -190,10 +191,10 @@ aresult_t _on_flex_alnum_msg(
 
     fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"alphanumeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
             "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%"PRIu64",\"fragment\":%s,"
-            "\"maildrop\":%s,\"fragSeq\":%u,\"message\":\"",
+            "\"maildrop\":%s,\"fragSeq\":%u,\"freq_hz\":%u,\"message\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
             baud, 0, frame_no, cycle_no, phase_id[phase], cap_code,
-            fragmented ? "true" : "false", maildrop ? "true" : "false", seq_num);
+            fragmented ? "true" : "false", maildrop ? "true" : "false", seq_num, freq_hz);
 
     for (size_t i = 0; i < message_len; i++) {
         _decoder_put_alnum_char(out_file, message_bytes[i]);
@@ -214,16 +215,18 @@ aresult_t _on_flex_num_msg(
         uint8_t frame_no,
         uint64_t cap_code,
         const char *message_bytes,
-        size_t message_len)
+        size_t message_len,
+	uint32_t freq_hz)
 {
     /* TODO: this sucks, should move it closer to the capture clock */
     time_t now = time(NULL);
     struct tm *gmt = gmtime(&now);
 
     fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"numeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
-            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%"PRIu64",\"message\":\"",
+            "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%"PRIu64","
+	    "\"freq_hz\":%u,\"message\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-            baud, 0, frame_no, cycle_no, phase_id[phase], cap_code);
+            baud, 0, frame_no, cycle_no, phase_id[phase], cap_code, freq_hz);
 
     for (size_t i = 0; i < message_len; i++) {
         _decoder_put_alnum_char(out_file, message_bytes[i]);
@@ -244,7 +247,8 @@ aresult_t _on_flex_siv_msg(
         uint8_t frame_no,
         uint64_t cap_code,
         uint8_t siv_msg_type,
-        uint32_t data)
+        uint32_t data,
+	uint32_t freq_hz)
 {
     /* TODO: this sucks, should move it closer to the capture clock */
     time_t now = time(NULL);
@@ -253,9 +257,9 @@ aresult_t _on_flex_siv_msg(
     switch (siv_msg_type) {
     case PAGER_FLEX_SIV_TEMP_ADDRESS_ACTIVATION:
         fprintf(out_file, "{\"proto\":\"flex\",\"type\":\"tempAddrActivation\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
-                "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%"PRIu64",\"startFrameNo\":%u,\"tempAddressId\":%u}\n",
+                "\"baud\":%i,\"syncLevel\":%i,\"frameNo\":%u,\"cycleNo\":%u,\"phaseNo\":\"%c\",\"capCode\":%"PRIu64",\"startFrameNo\":%u,\"tempAddressId\":%u,\"freq_hz\":%u}\n",
                 gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                baud, 0, frame_no, cycle_no, phase_id[phase], cap_code, data & 0x7f, (data >> 7) & 0xf);
+                baud, 0, frame_no, cycle_no, phase_id[phase], cap_code, data & 0x7f, (data >> 7) & 0xf, freq_hz);
         break;
     }
     return A_OK;
@@ -268,16 +272,17 @@ aresult_t _on_pocsag_alnum_msg(
         uint32_t capcode,
         const char *data,
         size_t data_len,
-        uint8_t function)
+        uint8_t function,
+	uint32_t freq_hz)
 {
     /* TODO: this sucks, should move it closer to the capture clock */
     time_t now = time(NULL);
     struct tm *gmt = gmtime(&now);
 
     fprintf(out_file, "{\"proto\":\"pocsag\",\"type\":\"alphanumeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
-            "\"baud\":%i,\"capCode\":%u,\"function\":%u,\"message\":\"",
+            "\"baud\":%i,\"capCode\":%u,\"function\":%u,\"freq_hz\":%u,\"message\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-            baud_rate, capcode, (unsigned)function);
+            baud_rate, capcode, (unsigned)function, freq_hz);
 
     for (size_t i = 0; i < data_len; i++) {
         _decoder_put_alnum_char(out_file, data[i]);
@@ -296,16 +301,17 @@ aresult_t _on_pocsag_num_msg(
         uint32_t capcode,
         const char *data,
         size_t data_len,
-        uint8_t function)
+        uint8_t function,
+	uint32_t freq_hz)
 {
     /* TODO: this sucks, should move it closer to the capture clock */
     time_t now = time(NULL);
     struct tm *gmt = gmtime(&now);
 
     fprintf(out_file, "{\"proto\":\"pocsag\",\"type\":\"numeric\",\"timestamp\":\"%04i-%02i-%02i %02i:%02i:%02i UTC\","
-            "\"baud\":%i,\"capCode\":%u,\"function\":%u,\"message\":\"",
+            "\"baud\":%i,\"capCode\":%u,\"function\":%u,\"freq_hz\":%u,\"message\":\"",
             gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-            baud_rate, capcode, (unsigned)function);
+            baud_rate, capcode, (unsigned)function, freq_hz);
 
     for (size_t i = 0; i < data_len; i++) {
         _decoder_put_alnum_char(out_file, data[i]);
