@@ -190,6 +190,11 @@ aresult_t airspy_worker_thread_new(struct receiver **pthr, struct config *cfg)
         }
     }
 
+    /* Enable packed sample transfers. */
+    if (0 != airspy_set_packing(dev, 1)) {
+	MFM_MSG(SEV_WARNING, "FAILED-BIT-PACKING", "Request for packed sample transfers failed, continuing.");
+    }
+
     /* Set the sample rate, as requested */
     if (0 != airspy_set_samplerate(dev, sample_rate)) {
         MFM_MSG(SEV_FATAL, "BAD-SAMPLE-RATE", "Unable to set sampling rate to %d Hz, aborting.",
@@ -208,28 +213,29 @@ aresult_t airspy_worker_thread_new(struct receiver **pthr, struct config *cfg)
 
     /* Set the LNA gain */
     if (0 != airspy_set_lna_gain(dev, lna_gain)) {
-        MFM_MSG(SEV_FATAL, "BAD-LNA-GAIN", "LNA gain value of %d dB is invalid, aborting", lna_gain);
+        MFM_MSG(SEV_FATAL, "BAD-LNA-GAIN", "LNA gain setting %d is invalid, aborting", lna_gain);
         ret = A_E_INVAL;
         goto done;
     }
 
     /* Set the VGA gain */
     if (0 != airspy_set_vga_gain(dev, vga_gain)) {
-        MFM_MSG(SEV_FATAL, "BAD-VGA-GAIN", "VGA gain value of %d dB is invalid, aborting", vga_gain);
+        MFM_MSG(SEV_FATAL, "BAD-VGA-GAIN", "VGA gain setting %d is invalid, aborting", vga_gain);
         ret = A_E_INVAL;
         goto done;
     }
 
     /* Set the Mixer gain */
     if (0 != airspy_set_mixer_gain(dev, mixer_gain)) {
-        MFM_MSG(SEV_FATAL, "BAD-MIXER-GAIN", "Mixer gain value of %d dB is invalid, aborting", mixer_gain);
+        MFM_MSG(SEV_FATAL, "BAD-MIXER-GAIN", "Mixer gain setting %d is invalid, aborting", mixer_gain);
         ret = A_E_INVAL;
         goto done;
     }
 
     /* Enable the Bias Tee if we were asked to do so */
     if (0 != airspy_set_rf_bias(dev, (true == bias_t) ? 1 : 0)) {
-        MFM_MSG(SEV_WARNING, "FAILED-ENABLE-BIAS", "Failed to enable Bias Tee for powering an outside device.");
+        MFM_MSG(SEV_WARNING, "FAILED-ENABLE-BIAS", "Failed to %sable Bias Tee for powering an outside device.",
+		(true == bias_t) ? "en" : "dis");
     }
 
     /* Create the device object */
