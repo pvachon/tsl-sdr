@@ -190,6 +190,11 @@ aresult_t airspy_worker_thread_new(struct receiver **pthr, struct config *cfg)
         }
     }
 
+    /* Enable packed sample transfers. */
+    if (0 != airspy_set_packing(dev, 1)) {
+	MFM_MSG(SEV_WARNING, "FAILED-BIT-PACKING", "Request for packed sample transfers failed, continuing.");
+    }
+
     /* Set the sample rate, as requested */
     if (0 != airspy_set_samplerate(dev, sample_rate)) {
         MFM_MSG(SEV_FATAL, "BAD-SAMPLE-RATE", "Unable to set sampling rate to %d Hz, aborting.",
